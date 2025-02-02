@@ -1,0 +1,6 @@
+/src/main/java/de/j_maas/app/lunch_money_entry/generated
+/src/main/jniLibs/**/*.so
+/src/main/assets/tauri.conf.json
+/tauri.build.gradle.kts
+/proguard-tauri.pro
+/tauri.properties
