@@ -4,18 +4,22 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "dev": "npm run build:interop-types && vite",
+    "build": "tsc && npm run build:interop-types && vite build",
+    "build:interop-types": "elm-ts-interop --output src/Main.elm.d.ts",
     "preview": "vite preview",
     "tauri": "tauri"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-log": "^2.2.1",
     "@tauri-apps/plugin-opener": "^2"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
+    "elm-ts-interop": "^0.0.8",
+    "typescript": "~5.6.2",
     "vite": "^6.0.3",
-    "typescript": "~5.6.2"
+    "vite-plugin-elm": "^3.0.1"
   }
 }

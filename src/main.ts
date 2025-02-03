@@ -1,22 +1,14 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Elm } from "./Main.elm"
 
-let greetInputEl: HTMLInputElement | null;
-let greetMsgEl: HTMLElement | null;
+const node = document.getElementById("elm");
+const flags = null;
+const app = Elm.Main.init({ node, flags });
 
-async function greet() {
-  if (greetMsgEl && greetInputEl) {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    greetMsgEl.textContent = await invoke("greet", {
-      name: greetInputEl.value,
-    });
-  }
-}
-
-window.addEventListener("DOMContentLoaded", () => {
-  greetInputEl = document.querySelector("#greet-input");
-  greetMsgEl = document.querySelector("#greet-msg");
-  document.querySelector("#greet-form")?.addEventListener("submit", (e) => {
-    e.preventDefault();
-    greet();
-  });
+app.ports.interopFromElm.subscribe((fromElm) => {
+    switch (fromElm.tag) {
+        case "alert": {
+            alert(fromElm.data.message);
+            break;
+        }
+    }
 });

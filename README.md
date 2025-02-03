@@ -1,7 +1,9 @@
-# Tauri + Vanilla TS
+# Lunch Money Entry
 
-This template should help get you started developing with Tauri in vanilla HTML, CSS and Typescript.
+## Setup
 
-## Recommended IDE Setup
+```
+npm run dev
+```
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+This also generates the ports' type definitions. If you see an error about missing type declarations for Elm, run this.
