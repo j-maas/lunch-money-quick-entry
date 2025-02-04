@@ -31,8 +31,10 @@ type alias Model =
 type alias AppModel =
     { token : Maybe LunchMoney.Token
     , dateInput : String
+    , categories : List String
     , amountInput : String
     , insertState : RemoteData Http.Error LunchMoney.InsertResponse
+    , error : Maybe String
     }
 
 
@@ -45,13 +47,24 @@ init flagsRaw =
             )
 
         Ok flags ->
+            let
+                ( maybeError, maybeCategoryCmd ) =
+                    case flags.maybeToken of
+                        Just token ->
+                            ( Nothing, LunchMoney.getAllCategories token GotCategories )
+
+                        Nothing ->
+                            ( Just "No token given at startup, not getting categories.", Cmd.none )
+            in
             ( Ok
                 { token = flags.maybeToken
                 , dateInput = flags.today
+                , categories = []
                 , amountInput = ""
                 , insertState = RemoteData.NotAsked
+                , error = maybeError
                 }
-            , Cmd.none
+            , maybeCategoryCmd
             )
 
 
@@ -61,6 +74,7 @@ type Msg
     | ChangedAmountInput String
     | TappedInsertTransaction
     | GotInsertedTransactions (Result Http.Error LunchMoney.InsertResponse)
+    | GotCategories (Result Http.Error LunchMoney.AllCategoriesResponse)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -136,6 +150,29 @@ updateAppModel msg model =
             , Cmd.none
             )
 
+        GotCategories result ->
+            case result of
+                Ok categories ->
+                    let
+                        newCategories =
+                            categories
+                                |> List.concatMap
+                                    (\entry ->
+                                        case entry of
+                                            LunchMoney.CategoryEntry info ->
+                                                [ info.name ]
+
+                                            LunchMoney.CategoryGroupEntry e ->
+                                                List.map .name e.children
+                                    )
+                    in
+                    ( { model | categories = newCategories }
+                    , Cmd.none
+                    )
+
+                Err err ->
+                    ( { model | error = Just <| "Error getting categories: " ++ stringFromHttpError err }, Cmd.none )
+
 
 tokenSettingKey : String
 tokenSettingKey =
@@ -180,28 +217,18 @@ appView model =
                     ]
 
                 RemoteData.Failure error ->
-                    let
-                        errorDisplay =
-                            case error of
-                                Http.BadUrl url ->
-                                    "The URL " ++ url ++ " is not valid."
-
-                                Http.NetworkError ->
-                                    "Please check your internet connection."
-
-                                Http.Timeout ->
-                                    "The server is taking a long time to respond."
-
-                                Http.BadStatus status ->
-                                    "The server responded with a bad status of " ++ String.fromInt status ++ "."
-
-                                Http.BadBody bodyError ->
-                                    "I sent a malformed body: " ++ bodyError
-                    in
-                    [ Html.text ("An error occurred: " ++ errorDisplay) ]
+                    [ Html.text ("An error occurred: " ++ stringFromHttpError error) ]
 
                 RemoteData.Success _ ->
                     [ Html.text "Successfully inserted" ]
+
+        errorDisplay =
+            case model.error of
+                Just err ->
+                    [ Html.text ("Error: " ++ err) ]
+
+                Nothing ->
+                    []
     in
     Html.main_
         [ Attr.css
@@ -234,11 +261,37 @@ appView model =
                 |> labeled "Date" [ Css.width (Css.pct 100) ]
              , textInput model.amountInput ChangedAmountInput
                 |> labeled "Amount" [ Css.width (Css.pct 100) ]
+             , Html.input [ Attr.type_ "text", Attr.list "test" ] []
+                |> labeled "Category" []
+             , Html.datalist [ Attr.id "test" ]
+                [ Html.option [ Attr.value "first" ] []
+                , Html.option [ Attr.value "second" ] []
+                ]
              , Html.button [ Attr.type_ "submit" ] [ Html.text "Insert" ]
              ]
                 ++ insertionIndicator
+                ++ errorDisplay
             )
         ]
+
+
+stringFromHttpError : Http.Error -> String
+stringFromHttpError error =
+    case error of
+        Http.BadUrl url ->
+            "The URL " ++ url ++ " is not valid."
+
+        Http.NetworkError ->
+            "Please check your internet connection."
+
+        Http.Timeout ->
+            "The server is taking a long time to respond."
+
+        Http.BadStatus status ->
+            "The server responded with a bad status of " ++ String.fromInt status ++ "."
+
+        Http.BadBody bodyError ->
+            "I sent a malformed body: " ++ bodyError
 
 
 textInput : String -> (String -> msg) -> Html msg

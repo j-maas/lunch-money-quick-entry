@@ -1,4 +1,4 @@
-module LunchMoney exposing (Amount, InsertResponse, Token, Transaction, amountFromCents, amountToString, insertTransactions, tokenFromString, tokenToString)
+module LunchMoney exposing (AllCategoriesResponse, Amount, CategoryEntry(..), CategoryInfo, InsertResponse, Token, Transaction, amountFromCents, amountToString, getAllCategories, insertTransactions, tokenFromString, tokenToString)
 
 import Date exposing (Date)
 import Http
@@ -81,6 +81,78 @@ type alias InsertResponse =
 decodeInsertResponse : Decoder InsertResponse
 decodeInsertResponse =
     Decode.field "ids" (Decode.list Decode.int)
+
+
+getAllCategories : Token -> (Result Http.Error AllCategoriesResponse -> msg) -> Cmd msg
+getAllCategories token toMsg =
+    get token
+        [ "v1", "categories" ]
+        [ ( "format", "nested" ) ]
+        decodeAllCategoriesResponse
+        toMsg
+
+
+type alias AllCategoriesResponse =
+    List CategoryEntry
+
+
+type CategoryEntry
+    = CategoryEntry CategoryInfo
+    | CategoryGroupEntry CategoryGroup
+
+
+type alias CategoryInfo =
+    { id : Int
+    , name : String
+    , archived : Bool
+    }
+
+
+type alias CategoryGroup =
+    { info : CategoryInfo
+    , children : List CategoryInfo
+    }
+
+
+decodeAllCategoriesResponse : Decoder (List CategoryEntry)
+decodeAllCategoriesResponse =
+    Decode.field "categories" decodeNestedCategories
+
+
+decodeNestedCategories : Decoder (List CategoryEntry)
+decodeNestedCategories =
+    Decode.map2
+        (\info isGroup ->
+            { info = info
+            , isGroup = isGroup
+            }
+        )
+        decodeCategoryInfo
+        (Decode.field "is_group" Decode.bool)
+        |> Decode.andThen
+            (\entry ->
+                if entry.isGroup then
+                    Decode.field "children" (Decode.list decodeCategoryInfo)
+                        |> Decode.map
+                            (\children ->
+                                CategoryGroupEntry
+                                    { info = entry.info
+                                    , children = children
+                                    }
+                            )
+
+                else
+                    Decode.succeed (CategoryEntry entry.info)
+            )
+        |> Decode.list
+
+
+decodeCategoryInfo : Decoder CategoryInfo
+decodeCategoryInfo =
+    Decode.map3 CategoryInfo
+        (Decode.field "id" Decode.int)
+        (Decode.field "name" Decode.string)
+        (Decode.field "archived" Decode.bool)
 
 
 get : Token -> List String -> List ( String, String ) -> Decoder a -> (Result Http.Error a -> msg) -> Cmd msg
