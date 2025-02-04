@@ -30,7 +30,8 @@ type alias User =
 
 
 type alias Flags =
-    {}
+    { today : String
+    }
 
 
 fromElm : Encoder FromElm
@@ -60,4 +61,9 @@ toElm =
 
 flags : Decoder Flags
 flags =
-    TsDecode.null {}
+    TsDecode.map
+        (\today ->
+            { today = today
+            }
+        )
+        (TsDecode.field "today" TsDecode.string)
