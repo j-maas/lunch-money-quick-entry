@@ -1,8 +1,9 @@
 module InteropDefinitions exposing (Flags, FromElm(..), ToElm(..), interop)
 
-import Json.Encode
+import LunchMoney
+import TsJson.Codec as Codec exposing (Codec)
 import TsJson.Decode as TsDecode exposing (Decoder)
-import TsJson.Encode as TsEncode exposing (Encoder, optional, required)
+import TsJson.Encode as TsEncode exposing (Encoder)
 
 
 interop :
@@ -17,53 +18,67 @@ interop =
     }
 
 
+type alias Flags =
+    { today : String
+    , maybeToken : Maybe LunchMoney.Token
+    }
+
+
+flags : Decoder Flags
+flags =
+    TsDecode.map2 Flags
+        (TsDecode.field "today" TsDecode.string)
+        (TsDecode.optionalField "token" tsDecodeToken
+            |> TsDecode.map (Maybe.andThen identity)
+        )
+
+
+tsDecodeToken : Decoder (Maybe LunchMoney.Token)
+tsDecodeToken =
+    TsDecode.string
+        |> TsDecode.map LunchMoney.tokenFromString
+
+
 type FromElm
-    = Alert String
+    = StoreSetting Setting
 
 
 type ToElm
-    = AuthenticatedUser User
+    = ReceivedSetting Setting
 
 
-type alias User =
-    { username : String }
-
-
-type alias Flags =
-    { today : String
+type alias Setting =
+    { key : String
+    , value : String
     }
+
+
+settingCodec : Codec Setting
+settingCodec =
+    Codec.object Setting
+        |> Codec.field "key" .key Codec.string
+        |> Codec.field "value" .value Codec.string
+        |> Codec.buildObject
 
 
 fromElm : Encoder FromElm
 fromElm =
     TsEncode.union
-        (\vAlert value ->
+        (\vStoreSetting value ->
             case value of
-                Alert string ->
-                    vAlert string
+                StoreSetting setting ->
+                    vStoreSetting setting
         )
-        |> TsEncode.variantTagged "alert"
-            (TsEncode.object [ required "message" identity TsEncode.string ])
+        |> TsEncode.variantTagged "storeSetting"
+            (Codec.encoder settingCodec)
         |> TsEncode.buildUnion
 
 
 toElm : Decoder ToElm
 toElm =
     TsDecode.discriminatedUnion "tag"
-        [ ( "authenticatedUser"
-          , TsDecode.map AuthenticatedUser
-                (TsDecode.map User
-                    (TsDecode.field "username" TsDecode.string)
-                )
+        [ ( "receivedSetting"
+          , TsDecode.map ReceivedSetting
+                (Codec.decoder settingCodec)
           )
         ]
-
-
-flags : Decoder Flags
-flags =
-    TsDecode.map
-        (\today ->
-            { today = today
-            }
-        )
-        (TsDecode.field "today" TsDecode.string)

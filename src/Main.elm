@@ -8,11 +8,13 @@ import Html.Styled.Attributes as Attr
 import Html.Styled.Events as Event
 import Http
 import InteropDefinitions
+import InteropPorts
+import Json.Decode as Decode
 import LunchMoney
 import RemoteData exposing (RemoteData)
 
 
-main : Program Flags Model Msg
+main : Program Decode.Value Model Msg
 main =
     Browser.element
         { init = init
@@ -23,6 +25,10 @@ main =
 
 
 type alias Model =
+    Result String AppModel
+
+
+type alias AppModel =
     { token : Maybe LunchMoney.Token
     , dateInput : String
     , amountInput : String
@@ -30,19 +36,23 @@ type alias Model =
     }
 
 
-type alias Flags =
-    InteropDefinitions.Flags
+init : Decode.Value -> ( Model, Cmd Msg )
+init flagsRaw =
+    case InteropPorts.decodeFlags flagsRaw of
+        Err flagsError ->
+            ( Err <| Decode.errorToString flagsError
+            , Cmd.none
+            )
 
-
-init : Flags -> ( Model, Cmd Msg )
-init flags =
-    ( { token = Nothing
-      , dateInput = flags.today
-      , amountInput = ""
-      , insertState = RemoteData.NotAsked
-      }
-    , Cmd.none
-    )
+        Ok flags ->
+            ( Ok
+                { token = flags.maybeToken
+                , dateInput = flags.today
+                , amountInput = ""
+                , insertState = RemoteData.NotAsked
+                }
+            , Cmd.none
+            )
 
 
 type Msg
@@ -55,10 +65,33 @@ type Msg
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
+    case model of
+        Err _ ->
+            ( model, Cmd.none )
+
+        Ok appModel ->
+            updateAppModel msg appModel
+                |> Tuple.mapFirst Ok
+
+
+updateAppModel : Msg -> AppModel -> ( AppModel, Cmd Msg )
+updateAppModel msg model =
     case msg of
-        ChangedToken newToken ->
-            ( { model | token = newToken |> LunchMoney.tokenFromString }
-            , Cmd.none
+        ChangedToken newTokenRaw ->
+            let
+                newToken =
+                    LunchMoney.tokenFromString newTokenRaw
+
+                maybeStoreToken =
+                    case newToken of
+                        Just token ->
+                            storeToken token
+
+                        Nothing ->
+                            Cmd.none
+            in
+            ( { model | token = newToken }
+            , maybeStoreToken
             )
 
         ChangedDateInput newDate ->
@@ -104,6 +137,20 @@ update msg model =
             )
 
 
+tokenSettingKey : String
+tokenSettingKey =
+    "token"
+
+
+storeToken : LunchMoney.Token -> Cmd Msg
+storeToken token =
+    InteropDefinitions.StoreSetting
+        { key = tokenSettingKey
+        , value = LunchMoney.tokenToString token
+        }
+        |> InteropPorts.fromElm
+
+
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.batch
@@ -111,7 +158,17 @@ subscriptions _ =
 
 
 view : Model -> Html Msg
-view model =
+view modelResult =
+    case modelResult of
+        Err error ->
+            Html.text error
+
+        Ok appModel ->
+            appView appModel
+
+
+appView : AppModel -> Html Msg
+appView model =
     let
         insertionIndicator =
             case model.insertState of
