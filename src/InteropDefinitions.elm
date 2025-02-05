@@ -28,7 +28,7 @@ flags : Decoder Flags
 flags =
     TsDecode.map2 Flags
         (TsDecode.field "today" TsDecode.string)
-        (TsDecode.optionalField "token" tsDecodeToken
+        (TsDecode.maybe (TsDecode.field "token" tsDecodeToken)
             |> TsDecode.map (Maybe.andThen identity)
         )
 

@@ -5,7 +5,7 @@ import * as tauriStore from '@tauri-apps/plugin-store';
 const store = await tauriStore.load("store.json", { autoSave: true });
 
 const today = new Date().toISOString().slice(0, 10);
-const token = await store.get<string>("token")
+const token = await store.get<string>("token");
 const flags: Elm.Flags = {
     today,
     token,
