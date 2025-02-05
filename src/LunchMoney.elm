@@ -1,4 +1,4 @@
-module LunchMoney exposing (AllCategoriesResponse, Amount, CategoryEntry(..), CategoryInfo, InsertResponse, Token, Transaction, amountFromCents, amountToString, getAllCategories, insertTransactions, tokenFromString, tokenToString)
+module LunchMoney exposing (AllAssetsResponse, AllCategoriesResponse, Amount, AssetInfo, CategoryEntry(..), CategoryInfo, InsertResponse, Token, Transaction, amountFromCents, amountToString, flattenEntries, getAllAssets, getAllCategories, insertTransactions, tokenFromString, tokenToString)
 
 import Date exposing (Date)
 import Http
@@ -126,6 +126,20 @@ type alias CategoryGroup =
     }
 
 
+flattenEntries : List CategoryEntry -> List CategoryInfo
+flattenEntries entries =
+    entries
+        |> List.concatMap
+            (\entry ->
+                case entry of
+                    CategoryEntry info ->
+                        [ info ]
+
+                    CategoryGroupEntry e ->
+                        e.children
+            )
+
+
 decodeAllCategoriesResponse : Decoder (List CategoryEntry)
 decodeAllCategoriesResponse =
     Decode.field "categories" decodeNestedCategories
@@ -165,6 +179,57 @@ decodeCategoryInfo =
         (Decode.field "id" Decode.int)
         (Decode.field "name" Decode.string)
         (Decode.field "archived" Decode.bool)
+
+
+getAllAssets : Token -> (Result Http.Error AllAssetsResponse -> msg) -> Cmd msg
+getAllAssets token toMsg =
+    get token
+        [ "v1", "assets" ]
+        []
+        decodeAllAssetsResponse
+        toMsg
+
+
+type alias AllAssetsResponse =
+    List AssetInfo
+
+
+type alias AssetInfo =
+    { id : Int
+    , name : String
+    , displayName : Maybe String
+    , excludeTransactions : Bool
+    , closedOn : Maybe Date
+    }
+
+
+decodeAllAssetsResponse : Decoder AllAssetsResponse
+decodeAllAssetsResponse =
+    Decode.field "assets" (Decode.list decodeAssetInfo)
+
+
+decodeAssetInfo : Decoder AssetInfo
+decodeAssetInfo =
+    Decode.map5 AssetInfo
+        (Decode.field "id" Decode.int)
+        (Decode.field "name" Decode.string)
+        (Decode.field "display_name" (Decode.maybe Decode.string))
+        (Decode.field "exclude_transactions" Decode.bool)
+        (Decode.field "closed_on" (Decode.maybe decodeDate))
+
+
+decodeDate : Decoder Date
+decodeDate =
+    Decode.string
+        |> Decode.andThen
+            (\raw ->
+                case Date.fromIsoString raw of
+                    Ok date ->
+                        Decode.succeed date
+
+                    Err err ->
+                        Decode.fail err
+            )
 
 
 get : Token -> List String -> List ( String, String ) -> Decoder a -> (Result Http.Error a -> msg) -> Cmd msg

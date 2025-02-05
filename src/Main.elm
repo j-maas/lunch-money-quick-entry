@@ -11,7 +11,9 @@ import InteropDefinitions
 import InteropPorts
 import Json.Decode as Decode
 import LunchMoney
+import LunchMoneyInfo
 import RemoteData exposing (RemoteData)
+import Utils exposing (stringFromHttpError)
 
 
 main : Program Decode.Value Model Msg
@@ -31,7 +33,7 @@ type alias Model =
 type alias AppModel =
     { token : Maybe LunchMoney.Token
     , dateInput : String
-    , categories : List LunchMoney.CategoryInfo
+    , lunchMoneyInfo : LunchMoneyInfo.Remote
     , categoryInput : String
     , amountInput : String
     , insertState : RemoteData Http.Error LunchMoney.InsertResponse
@@ -49,35 +51,35 @@ init flagsRaw =
 
         Ok flags ->
             let
-                ( maybeError, maybeCategoryCmd ) =
+                ( maybeError, maybeLunchMoneyInfoCmd ) =
                     case flags.maybeToken of
                         Just token ->
-                            ( Nothing, LunchMoney.getAllCategories token GotCategories )
+                            ( Nothing, LunchMoneyInfo.fetch token GotLunchMoneyInfoMsg )
 
                         Nothing ->
-                            ( Just "No token given at startup, not getting categories.", Cmd.none )
+                            ( Just "No token given at startup, not getting updates.", Cmd.none )
             in
             ( Ok
                 { token = flags.maybeToken
                 , dateInput = flags.today
-                , categories = []
+                , lunchMoneyInfo = LunchMoneyInfo.empty
                 , categoryInput = ""
                 , amountInput = ""
                 , insertState = RemoteData.NotAsked
                 , error = maybeError
                 }
-            , maybeCategoryCmd
+            , maybeLunchMoneyInfoCmd
             )
 
 
 type Msg
-    = ChangedToken String
+    = GotLunchMoneyInfoMsg LunchMoneyInfo.Msg
+    | ChangedToken String
     | ChangedDateInput String
     | ChangedAmountInput String
     | ChangedCategoryInput String
     | TappedInsertTransaction
     | GotInsertedTransactions (Result Http.Error LunchMoney.InsertResponse)
-    | GotCategories (Result Http.Error LunchMoney.AllCategoriesResponse)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -94,6 +96,15 @@ update msg model =
 updateAppModel : Msg -> AppModel -> ( AppModel, Cmd Msg )
 updateAppModel msg model =
     case msg of
+        GotLunchMoneyInfoMsg m ->
+            let
+                ( newLunchMoneyInfo, cmd ) =
+                    LunchMoneyInfo.update m model.lunchMoneyInfo
+            in
+            ( { model | lunchMoneyInfo = newLunchMoneyInfo }
+            , cmd
+            )
+
         ChangedToken newTokenRaw ->
             let
                 newToken =
@@ -121,11 +132,21 @@ updateAppModel msg model =
             ( { model | categoryInput = newCategory }, Cmd.none )
 
         TappedInsertTransaction ->
-            case ( model.token, Date.fromIsoString model.dateInput ) of
-                ( Just token, Ok date ) ->
+            let
+                token_ =
+                    model.token
+
+                date_ =
+                    Date.fromIsoString model.dateInput
+
+                lunchMoneyInfo_ =
+                    model.lunchMoneyInfo |> LunchMoneyInfo.combined
+            in
+            case ( token_, date_, lunchMoneyInfo_ ) of
+                ( Just token, Ok date, RemoteData.Success info ) ->
                     let
                         matchingCategories =
-                            model.categories
+                            info.categories
                                 |> List.filter (\category -> category.name == model.categoryInput)
 
                         maybeCategoryId =
@@ -168,29 +189,6 @@ updateAppModel msg model =
               }
             , Cmd.none
             )
-
-        GotCategories result ->
-            case result of
-                Ok categories ->
-                    let
-                        newCategories =
-                            categories
-                                |> List.concatMap
-                                    (\entry ->
-                                        case entry of
-                                            LunchMoney.CategoryEntry info ->
-                                                [ info ]
-
-                                            LunchMoney.CategoryGroupEntry e ->
-                                                e.children
-                                    )
-                    in
-                    ( { model | categories = newCategories }
-                    , Cmd.none
-                    )
-
-                Err err ->
-                    ( { model | error = Just <| "Error getting categories: " ++ stringFromHttpError err }, Cmd.none )
 
 
 tokenSettingKey : String
@@ -248,6 +246,15 @@ appView model =
 
                 Nothing ->
                     []
+
+        lunchMoneyInfo =
+            model.lunchMoneyInfo
+                |> LunchMoneyInfo.combined
+
+        categories =
+            lunchMoneyInfo
+                |> RemoteData.map .categories
+                |> RemoteData.withDefault []
     in
     Html.main_
         [ Attr.css
@@ -275,17 +282,23 @@ appView model =
                             ""
                     )
                     ChangedToken
-                    []
+                    [ Attr.required True ]
                ]
                 |> labeled "Access token" []
-             , [ dateInput model.dateInput ChangedDateInput ]
+             , [ dateInput model.dateInput ChangedDateInput [ Attr.required True ] ]
                 |> labeled "Date" []
-             , [ textInput model.amountInput ChangedAmountInput [ Attr.attribute "inputmode" "numeric" ] ]
+             , [ textInput model.amountInput
+                    ChangedAmountInput
+                    [ Attr.required True
+                    , Attr.attribute "inputmode" "numeric"
+                    ]
+               ]
                 |> labeled "Amount" []
              , autocompleteInput "categoryList"
                 model.categoryInput
                 ChangedCategoryInput
-                (model.categories |> List.map .name)
+                (categories |> List.map .name)
+                [ Attr.required True ]
                 |> labeled "Category" [ Css.width (Css.pct 100) ]
              , Html.button
                 [ Attr.type_ "submit"
@@ -297,25 +310,6 @@ appView model =
                 ++ errorDisplay
             )
         ]
-
-
-stringFromHttpError : Http.Error -> String
-stringFromHttpError error =
-    case error of
-        Http.BadUrl url ->
-            "The URL " ++ url ++ " is not valid."
-
-        Http.NetworkError ->
-            "Please check your internet connection."
-
-        Http.Timeout ->
-            "The server is taking a long time to respond."
-
-        Http.BadStatus status ->
-            "The server responded with a bad status of " ++ String.fromInt status ++ "."
-
-        Http.BadBody bodyError ->
-            "I sent a malformed body: " ++ bodyError
 
 
 textInput : String -> (String -> msg) -> List (Html.Attribute msg) -> Html msg
@@ -330,19 +324,21 @@ textInput value toMsg attributes =
         []
 
 
-dateInput : String -> (String -> msg) -> Html msg
-dateInput value toMsg =
+dateInput : String -> (String -> msg) -> List (Html.Attribute msg) -> Html msg
+dateInput value toMsg attributes =
     Html.input
-        [ Attr.type_ "date"
-        , Attr.value value
-        , Event.onInput toMsg
-        ]
+        ([ Attr.type_ "date"
+         , Attr.value value
+         , Event.onInput toMsg
+         ]
+            ++ attributes
+        )
         []
 
 
-autocompleteInput : String -> String -> (String -> msg) -> List String -> List (Html msg)
-autocompleteInput listId current toMsg options =
-    [ textInput current toMsg [ Attr.list listId, Event.onInput toMsg ]
+autocompleteInput : String -> String -> (String -> msg) -> List String -> List (Html.Attribute msg) -> List (Html msg)
+autocompleteInput listId current toMsg options attributes =
+    [ textInput current toMsg ([ Attr.list listId, Event.onInput toMsg ] ++ attributes)
     , Html.datalist [ Attr.id listId ]
         (options
             |> List.map
