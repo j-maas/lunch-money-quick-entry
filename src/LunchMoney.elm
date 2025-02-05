@@ -51,15 +51,27 @@ amountToString (Cents cents) =
 type alias Transaction =
     { date : Date
     , amount : Amount
+    , categoryId : Maybe Int
     }
 
 
 encodeTransaction : Transaction -> Encode.Value
 encodeTransaction transaction =
+    let
+        maybeCategoryId =
+            case transaction.categoryId of
+                Just categoryId ->
+                    [ ( "category_id", categoryId |> Encode.int ) ]
+
+                Nothing ->
+                    []
+    in
     Encode.object
-        [ ( "date", transaction.date |> Date.toIsoString |> Encode.string )
-        , ( "amount", transaction.amount |> amountToString |> Encode.string )
-        ]
+        ([ ( "date", transaction.date |> Date.toIsoString |> Encode.string )
+         , ( "amount", transaction.amount |> amountToString |> Encode.string )
+         ]
+            ++ maybeCategoryId
+        )
 
 
 insertTransactions : Token -> List Transaction -> (Result Http.Error InsertResponse -> msg) -> Cmd msg

@@ -31,7 +31,8 @@ type alias Model =
 type alias AppModel =
     { token : Maybe LunchMoney.Token
     , dateInput : String
-    , categories : List String
+    , categories : List LunchMoney.CategoryInfo
+    , categoryInput : String
     , amountInput : String
     , insertState : RemoteData Http.Error LunchMoney.InsertResponse
     , error : Maybe String
@@ -60,6 +61,7 @@ init flagsRaw =
                 { token = flags.maybeToken
                 , dateInput = flags.today
                 , categories = []
+                , categoryInput = ""
                 , amountInput = ""
                 , insertState = RemoteData.NotAsked
                 , error = maybeError
@@ -72,6 +74,7 @@ type Msg
     = ChangedToken String
     | ChangedDateInput String
     | ChangedAmountInput String
+    | ChangedCategoryInput String
     | TappedInsertTransaction
     | GotInsertedTransactions (Result Http.Error LunchMoney.InsertResponse)
     | GotCategories (Result Http.Error LunchMoney.AllCategoriesResponse)
@@ -114,10 +117,25 @@ updateAppModel msg model =
         ChangedAmountInput newAmount ->
             ( { model | amountInput = newAmount }, Cmd.none )
 
+        ChangedCategoryInput newCategory ->
+            ( { model | categoryInput = newCategory }, Cmd.none )
+
         TappedInsertTransaction ->
             case ( model.token, Date.fromIsoString model.dateInput ) of
                 ( Just token, Ok date ) ->
                     let
+                        matchingCategories =
+                            model.categories
+                                |> List.filter (\category -> category.name == model.categoryInput)
+
+                        maybeCategoryId =
+                            case matchingCategories of
+                                [ match ] ->
+                                    Just match.id
+
+                                _ ->
+                                    Nothing
+
                         transaction =
                             { date = date
                             , amount =
@@ -125,6 +143,7 @@ updateAppModel msg model =
                                     |> String.toInt
                                     |> Maybe.withDefault 123
                                     |> LunchMoney.amountFromCents
+                            , categoryId = maybeCategoryId
                             }
 
                         insertTransactionsCmd =
@@ -160,10 +179,10 @@ updateAppModel msg model =
                                     (\entry ->
                                         case entry of
                                             LunchMoney.CategoryEntry info ->
-                                                [ info.name ]
+                                                [ info ]
 
                                             LunchMoney.CategoryGroupEntry e ->
-                                                List.map .name e.children
+                                                e.children
                                     )
                     in
                     ( { model | categories = newCategories }
@@ -242,32 +261,37 @@ appView model =
             [ Attr.css
                 [ Css.display Css.flex_
                 , Css.flexDirection Css.column
-                , Css.alignItems Css.start
+                , Css.alignItems Css.stretch
                 , Css.gap (Css.rem 1)
                 ]
             , Event.onSubmit TappedInsertTransaction
             ]
-            ([ textInput
-                (case model.token of
-                    Just token ->
-                        LunchMoney.tokenToString token
+            ([ [ textInput
+                    (case model.token of
+                        Just token ->
+                            LunchMoney.tokenToString token
 
-                    Nothing ->
-                        ""
-                )
-                ChangedToken
-                |> labeled "Access token" [ Css.width (Css.pct 100) ]
-             , dateInput model.dateInput ChangedDateInput
-                |> labeled "Date" [ Css.width (Css.pct 100) ]
-             , textInput model.amountInput ChangedAmountInput
-                |> labeled "Amount" [ Css.width (Css.pct 100) ]
-             , Html.input [ Attr.type_ "text", Attr.list "test" ] []
-                |> labeled "Category" []
-             , Html.datalist [ Attr.id "test" ]
-                [ Html.option [ Attr.value "first" ] []
-                , Html.option [ Attr.value "second" ] []
+                        Nothing ->
+                            ""
+                    )
+                    ChangedToken
+                    []
+               ]
+                |> labeled "Access token" []
+             , [ dateInput model.dateInput ChangedDateInput ]
+                |> labeled "Date" []
+             , [ textInput model.amountInput ChangedAmountInput [] ]
+                |> labeled "Amount" []
+             , autocompleteInput "categoryList"
+                model.categoryInput
+                ChangedCategoryInput
+                (model.categories |> List.map .name)
+                |> labeled "Category" [ Css.width (Css.pct 100) ]
+             , Html.button
+                [ Attr.type_ "submit"
+                , Attr.css [ Css.alignSelf Css.start ]
                 ]
-             , Html.button [ Attr.type_ "submit" ] [ Html.text "Insert" ]
+                [ Html.text "Insert" ]
              ]
                 ++ insertionIndicator
                 ++ errorDisplay
@@ -294,13 +318,15 @@ stringFromHttpError error =
             "I sent a malformed body: " ++ bodyError
 
 
-textInput : String -> (String -> msg) -> Html msg
-textInput value toMsg =
+textInput : String -> (String -> msg) -> List (Html.Attribute msg) -> Html msg
+textInput value toMsg attributes =
     Html.input
-        [ Attr.type_ "text"
-        , Attr.value value
-        , Event.onInput toMsg
-        ]
+        ([ Attr.type_ "text"
+         , Attr.value value
+         , Event.onInput toMsg
+         ]
+            ++ attributes
+        )
         []
 
 
@@ -314,8 +340,21 @@ dateInput value toMsg =
         []
 
 
-labeled : String -> List Css.Style -> Html msg -> Html msg
-labeled label styles child =
+autocompleteInput : String -> String -> (String -> msg) -> List String -> List (Html msg)
+autocompleteInput listId current toMsg options =
+    [ textInput current toMsg [ Attr.list listId, Event.onInput toMsg ]
+    , Html.datalist [ Attr.id listId ]
+        (options
+            |> List.map
+                (\option ->
+                    Html.option [ Attr.value option ] []
+                )
+        )
+    ]
+
+
+labeled : String -> List Css.Style -> List (Html msg) -> Html msg
+labeled label styles children =
     Html.label
         [ Attr.css
             ([ Css.display Css.flex_
@@ -324,9 +363,9 @@ labeled label styles child =
                 ++ styles
             )
         ]
-        [ Html.text label
-        , child
-        ]
+        (Html.text label
+            :: children
+        )
 
 
 loaderView : Html Msg
