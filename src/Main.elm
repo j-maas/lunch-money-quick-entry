@@ -280,7 +280,7 @@ appView model =
                 |> labeled "Access token" []
              , [ dateInput model.dateInput ChangedDateInput ]
                 |> labeled "Date" []
-             , [ textInput model.amountInput ChangedAmountInput [] ]
+             , [ textInput model.amountInput ChangedAmountInput [ Attr.attribute "inputmode" "numeric" ] ]
                 |> labeled "Amount" []
              , autocompleteInput "categoryList"
                 model.categoryInput
