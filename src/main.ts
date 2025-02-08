@@ -6,9 +6,11 @@ const store = await tauriStore.load("store.json", { autoSave: true });
 
 const today = new Date().toISOString().slice(0, 10);
 const token = await store.get<string>("token");
+const insertQueue = await store.get<string>("insertQueue");
 const flags: Elm.Flags = {
     today,
     token,
+    insertQueue
 };
 
 console.debug("Initializing Elm with flags: ", flags)

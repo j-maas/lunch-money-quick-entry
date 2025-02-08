@@ -1,9 +1,12 @@
-module LunchMoney exposing (AllAssetsResponse, AllCategoriesResponse, Amount, AssetInfo, CategoryEntry(..), CategoryInfo, InsertResponse, Token, Transaction, amountFromCents, amountToString, assetName, flattenEntries, getAllAssets, getAllCategories, insertTransactions, tokenFromString, tokenToString, showAssetSelection)
+module LunchMoney exposing (AllAssetsResponse, AllCategoriesResponse, Amount, AssetInfo, CategoryEntry(..), CategoryInfo, InsertResponse, Token, Transaction, amountFromCents, amountToString, assetName, codecAmount, codecTransaction, flattenEntries, getAllAssets, getAllCategories, insertTransactions, showAssetSelection, tokenFromString, tokenToString)
 
 import Date exposing (Date)
 import Http
-import Json.Decode as Decode exposing (Decoder)
-import Json.Encode as Encode
+import Json.Encode as Json
+import TsJson.Codec as Codec exposing (Codec)
+import TsJson.Decode as Decode exposing (Decoder)
+import TsJson.Encode as Encode
+import Utils exposing (codecDate)
 
 
 type Token
@@ -55,22 +58,40 @@ type alias Transaction =
     }
 
 
-encodeTransaction : Transaction -> Encode.Value
-encodeTransaction transaction =
-    let
-        maybeCategoryId =
-            case transaction.categoryId of
-                Just categoryId ->
-                    [ ( "category_id", categoryId |> Encode.int ) ]
+codecTransaction : Codec Transaction
+codecTransaction =
+    Codec.object Transaction
+        |> Codec.field "date" .date codecDate
+        |> Codec.field "amount" .amount codecAmount
+        |> Codec.maybeField "category_id" .categoryId Codec.int
+        |> Codec.buildObject
 
-                Nothing ->
-                    []
-    in
-    Encode.object
-        ([ ( "date", transaction.date |> Date.toIsoString |> Encode.string )
-         , ( "amount", transaction.amount |> amountToString |> Encode.string )
-         ]
-            ++ maybeCategoryId
+
+codecAmount : Codec Amount
+codecAmount =
+    Codec.build (Encode.string |> Encode.map amountToString)
+        (Decode.string
+            |> Decode.andThen
+                (Decode.andThenInit
+                    (\raw ->
+                        case String.split "." raw of
+                            [ rawBefore, rawAfter ] ->
+                                case ( String.toInt rawBefore, String.toInt rawAfter ) of
+                                    ( Just before, Just after ) ->
+                                        let
+                                            cents =
+                                                before * 100 + after
+                                        in
+                                        amountFromCents cents
+                                            |> Decode.succeed
+
+                                    _ ->
+                                        Decode.fail ("Expected integers, got " ++ rawBefore ++ "." ++ rawAfter)
+
+                            _ ->
+                                Decode.fail ("Expected exactly one decimal point, but got '" ++ raw ++ "'")
+                    )
+                )
         )
 
 
@@ -78,9 +99,12 @@ insertTransactions : Token -> List Transaction -> (Result Http.Error InsertRespo
 insertTransactions token transactions toMsg =
     post token
         [ "v1", "transactions" ]
-        (Encode.object
-            [ ( "transactions", Encode.list encodeTransaction transactions )
-            ]
+        (transactions
+            |> Encode.encoder
+                (Encode.object
+                    [ Encode.required "transactions" identity (Encode.list (Codec.encoder codecTransaction))
+                    ]
+                )
         )
         decodeInsertResponse
         toMsg
@@ -156,19 +180,21 @@ decodeNestedCategories =
         decodeCategoryInfo
         (Decode.field "is_group" Decode.bool)
         |> Decode.andThen
-            (\entry ->
-                if entry.isGroup then
-                    Decode.field "children" (Decode.list decodeCategoryInfo)
-                        |> Decode.map
-                            (\children ->
-                                CategoryGroupEntry
-                                    { info = entry.info
-                                    , children = children
-                                    }
-                            )
+            (Decode.andThenInit
+                (\entry ->
+                    if entry.isGroup then
+                        Decode.field "children" (Decode.list decodeCategoryInfo)
+                            |> Decode.map
+                                (\children ->
+                                    CategoryGroupEntry
+                                        { info = entry.info
+                                        , children = children
+                                        }
+                                )
 
-                else
-                    Decode.succeed (CategoryEntry entry.info)
+                    else
+                        Decode.succeed (CategoryEntry entry.info)
+                )
             )
         |> Decode.list
 
@@ -247,13 +273,15 @@ decodeDate : Decoder Date
 decodeDate =
     Decode.string
         |> Decode.andThen
-            (\raw ->
-                case Date.fromIsoString raw of
-                    Ok date ->
-                        Decode.succeed date
+            (Decode.andThenInit
+                (\raw ->
+                    case Date.fromIsoString raw of
+                        Ok date ->
+                            Decode.succeed date
 
-                    Err err ->
-                        Decode.fail err
+                        Err err ->
+                            Decode.fail err
+                )
             )
 
 
@@ -270,20 +298,20 @@ get token path queryParams decodeResponse toMsg =
         , headers = [ authHeader token ]
         , url = baseDomain ++ String.join "/" path ++ "?" ++ queryParamsEncoded
         , body = Http.emptyBody
-        , expect = Http.expectJson toMsg decodeResponse
+        , expect = Http.expectJson toMsg (Decode.decoder decodeResponse)
         , timeout = timeout
         , tracker = Nothing
         }
 
 
-post : Token -> List String -> Encode.Value -> Decoder a -> (Result Http.Error a -> msg) -> Cmd msg
+post : Token -> List String -> Json.Value -> Decoder a -> (Result Http.Error a -> msg) -> Cmd msg
 post token path body decodeResponse toMsg =
     Http.request
         { method = "POST"
         , headers = [ authHeader token ]
         , url = baseDomain ++ String.join "/" path
         , body = Http.jsonBody body
-        , expect = Http.expectJson toMsg decodeResponse
+        , expect = Http.expectJson toMsg (Decode.decoder decodeResponse)
         , timeout = timeout
         , tracker = Nothing
         }

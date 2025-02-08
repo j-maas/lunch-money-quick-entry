@@ -1,6 +1,10 @@
-module Utils exposing (stringFromHttpError)
+module Utils exposing (codecDate, stringFromHttpError)
 
+import Date exposing (Date)
 import Http
+import TsJson.Codec as Codec exposing (Codec)
+import TsJson.Decode as Decode
+import TsJson.Encode as Encode
 
 
 stringFromHttpError : Http.Error -> String
@@ -20,3 +24,24 @@ stringFromHttpError error =
 
         Http.BadBody bodyError ->
             "I sent a malformed body: " ++ bodyError
+
+
+codecDate : Codec Date
+codecDate =
+    Codec.build
+        (Encode.string
+            |> Encode.map Date.toIsoString
+        )
+        (Decode.string
+            |> Decode.andThen
+                (Decode.andThenInit
+                    (\rawDate ->
+                        case Date.fromIsoString rawDate of
+                            Ok date ->
+                                Decode.succeed date
+
+                            Err err ->
+                                Decode.fail err
+                    )
+                )
+        )

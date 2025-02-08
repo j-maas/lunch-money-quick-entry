@@ -6,14 +6,15 @@ import Date
 import Html.Styled as Html exposing (Html)
 import Html.Styled.Attributes as Attr
 import Html.Styled.Events as Event
-import Http
+import InsertQueue exposing (InsertQueue)
 import InteropDefinitions
 import InteropPorts
 import Json.Decode as Decode
 import LunchMoney
 import LunchMoneyInfo
-import RemoteData exposing (RemoteData)
-import Utils exposing (stringFromHttpError)
+import RemoteData
+import TsJson.Codec as Codec
+import TsJson.Encode as Encode
 
 
 main : Program Decode.Value Model Msg
@@ -37,7 +38,7 @@ type alias AppModel =
     , categoryInput : String
     , assetInput : String
     , amountInput : String
-    , insertState : RemoteData Http.Error LunchMoney.InsertResponse
+    , insertQueue : InsertQueue
     , error : Maybe String
     }
 
@@ -67,7 +68,7 @@ init flagsRaw =
                 , amountInput = ""
                 , categoryInput = ""
                 , assetInput = ""
-                , insertState = RemoteData.NotAsked
+                , insertQueue = InsertQueue.empty
                 , error = maybeError
                 }
             , maybeLunchMoneyInfoCmd
@@ -82,7 +83,7 @@ type Msg
     | ChangedCategoryInput String
     | ChangedAssetInput String
     | TappedInsertTransaction
-    | GotInsertedTransactions (Result Http.Error LunchMoney.InsertResponse)
+    | GotInsertQueueMsg InsertQueue.Msg
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -173,27 +174,25 @@ updateAppModel msg model =
                             , categoryId = maybeCategoryId
                             }
 
-                        insertTransactionsCmd =
-                            LunchMoney.insertTransactions
-                                token
-                                [ transaction ]
-                                GotInsertedTransactions
+                        ( newInsertQueue, insertCmds ) =
+                            InsertQueue.insert token GotInsertQueueMsg [ transaction ] model.insertQueue
                     in
                     ( { model
-                        | insertState = RemoteData.Loading
+                        | insertQueue = newInsertQueue
                       }
-                    , insertTransactionsCmd
+                    , insertCmds
                     )
 
                 _ ->
                     ( model, Cmd.none )
 
-        GotInsertedTransactions result ->
-            ( { model
-                | amountInput = ""
-                , insertState = result |> RemoteData.fromResult
-              }
-            , Cmd.none
+        GotInsertQueueMsg m ->
+            let
+                newInsertQueue =
+                    InsertQueue.update m model.insertQueue
+            in
+            ( { model | insertQueue = newInsertQueue }
+            , storeInsertQueue newInsertQueue
             )
 
 
@@ -206,7 +205,24 @@ storeToken : LunchMoney.Token -> Cmd Msg
 storeToken token =
     InteropDefinitions.StoreSetting
         { key = tokenSettingKey
-        , value = LunchMoney.tokenToString token
+        , value =
+            Encode.encoder
+                (Encode.string |> Encode.map LunchMoney.tokenToString)
+                token
+        }
+        |> InteropPorts.fromElm
+
+
+insertQueueKey : String
+insertQueueKey =
+    "insertQueue"
+
+
+storeInsertQueue : InsertQueue -> Cmd Msg
+storeInsertQueue iq =
+    InteropDefinitions.StoreSetting
+        { key = insertQueueKey
+        , value = Encode.encoder (Codec.encoder InsertQueue.codecInsertQueue) iq
         }
         |> InteropPorts.fromElm
 
@@ -231,19 +247,16 @@ appView : AppModel -> Html Msg
 appView model =
     let
         insertionIndicator =
-            case model.insertState of
-                RemoteData.NotAsked ->
+            case InsertQueue.processing model.insertQueue of
+                InsertQueue.Idle ->
                     []
 
-                RemoteData.Loading ->
+                InsertQueue.Loading _ ->
                     [ loaderView
                     ]
 
-                RemoteData.Failure error ->
-                    [ Html.text ("An error occurred: " ++ stringFromHttpError error) ]
-
-                RemoteData.Success _ ->
-                    [ Html.text "Successfully inserted" ]
+                InsertQueue.Error error _ ->
+                    [ Html.text ("An error occurred: " ++ error) ]
 
         errorDisplay =
             case model.error of
