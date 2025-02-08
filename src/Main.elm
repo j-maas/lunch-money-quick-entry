@@ -35,6 +35,7 @@ type alias AppModel =
     , dateInput : String
     , lunchMoneyInfo : LunchMoneyInfo.Remote
     , categoryInput : String
+    , assetInput : String
     , amountInput : String
     , insertState : RemoteData Http.Error LunchMoney.InsertResponse
     , error : Maybe String
@@ -63,8 +64,9 @@ init flagsRaw =
                 { token = flags.maybeToken
                 , dateInput = flags.today
                 , lunchMoneyInfo = LunchMoneyInfo.empty
-                , categoryInput = ""
                 , amountInput = ""
+                , categoryInput = ""
+                , assetInput = ""
                 , insertState = RemoteData.NotAsked
                 , error = maybeError
                 }
@@ -78,6 +80,7 @@ type Msg
     | ChangedDateInput String
     | ChangedAmountInput String
     | ChangedCategoryInput String
+    | ChangedAssetInput String
     | TappedInsertTransaction
     | GotInsertedTransactions (Result Http.Error LunchMoney.InsertResponse)
 
@@ -130,6 +133,9 @@ updateAppModel msg model =
 
         ChangedCategoryInput newCategory ->
             ( { model | categoryInput = newCategory }, Cmd.none )
+
+        ChangedAssetInput newAsset ->
+            ( { model | assetInput = newAsset }, Cmd.none )
 
         TappedInsertTransaction ->
             let
@@ -255,6 +261,11 @@ appView model =
             lunchMoneyInfo
                 |> RemoteData.map .categories
                 |> RemoteData.withDefault []
+
+        assets =
+            lunchMoneyInfo
+                |> RemoteData.map .assets
+                |> RemoteData.withDefault []
     in
     Html.main_
         [ Attr.css
@@ -300,6 +311,12 @@ appView model =
                 (categories |> List.map .name)
                 [ Attr.required True ]
                 |> labeled "Category" [ Css.width (Css.pct 100) ]
+             , autocompleteInput "assetList"
+                model.assetInput
+                ChangedAssetInput
+                (assets |> LunchMoney.showAssetSelection)
+                []
+                |> labeled "Account" [ Css.width (Css.pct 100) ]
              , Html.button
                 [ Attr.type_ "submit"
                 , Attr.css [ Css.alignSelf Css.start ]

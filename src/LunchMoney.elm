@@ -1,4 +1,4 @@
-module LunchMoney exposing (AllAssetsResponse, AllCategoriesResponse, Amount, AssetInfo, CategoryEntry(..), CategoryInfo, InsertResponse, Token, Transaction, amountFromCents, amountToString, flattenEntries, getAllAssets, getAllCategories, insertTransactions, tokenFromString, tokenToString)
+module LunchMoney exposing (AllAssetsResponse, AllCategoriesResponse, Amount, AssetInfo, CategoryEntry(..), CategoryInfo, InsertResponse, Token, Transaction, amountFromCents, amountToString, assetName, flattenEntries, getAllAssets, getAllCategories, insertTransactions, tokenFromString, tokenToString, showAssetSelection)
 
 import Date exposing (Date)
 import Http
@@ -201,6 +201,31 @@ type alias AssetInfo =
     , excludeTransactions : Bool
     , closedOn : Maybe Date
     }
+
+
+showAssetSelection : List AssetInfo -> List String
+showAssetSelection all =
+    all
+        |> List.filter
+            (\info ->
+                case info.closedOn of
+                    Just _ ->
+                        False
+
+                    Nothing ->
+                        not info.excludeTransactions
+            )
+        |> List.map assetName
+
+
+assetName : AssetInfo -> String
+assetName info =
+    case info.displayName of
+        Just displayName ->
+            displayName
+
+        Nothing ->
+            info.name
 
 
 decodeAllAssetsResponse : Decoder AllAssetsResponse
