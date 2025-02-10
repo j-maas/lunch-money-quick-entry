@@ -1,4 +1,4 @@
-module LunchMoneyInfo exposing (LunchMoneyInfo, Msg, Remote, combined, empty, fetch, update)
+module LunchMoneyInfo exposing (LunchMoneyInfo, Msg, Store, activeAssets, categories, combined, empty, fetch, payees, update)
 
 import Http
 import LunchMoney
@@ -6,23 +6,45 @@ import RemoteData exposing (RemoteData)
 import Utils exposing (stringFromHttpError)
 
 
-type alias Remote =
-    { categories : RemoteData String (List LunchMoney.CategoryInfo)
-    , assets : RemoteData String (List LunchMoney.AssetInfo)
-    }
+type Store
+    = Store
+        { categories : RemoteData String (List LunchMoney.CategoryInfo)
+        , assets : RemoteData String (List LunchMoney.AssetInfo)
+        , payees : List String
+        }
 
 
-type alias LunchMoneyInfo =
-    { categories : List LunchMoney.CategoryInfo
-    , assets : List LunchMoney.AssetInfo
-    }
+type LunchMoneyInfo
+    = LunchMoneyInfo
+        { categories : List LunchMoney.CategoryInfo
+        , assets : List LunchMoney.AssetInfo
+        , payees : List String
+        }
 
 
-empty : Remote
+categories : LunchMoneyInfo -> List LunchMoney.CategoryInfo
+categories (LunchMoneyInfo info) =
+    info.categories
+
+
+activeAssets : LunchMoneyInfo -> List LunchMoney.AssetInfo
+activeAssets (LunchMoneyInfo info) =
+    info.assets
+        |> List.filter LunchMoney.assetIsActive
+
+
+payees : LunchMoneyInfo -> List String
+payees (LunchMoneyInfo info) =
+    info.payees
+
+
+empty : Store
 empty =
-    { categories = RemoteData.NotAsked
-    , assets = RemoteData.NotAsked
-    }
+    Store
+        { categories = RemoteData.NotAsked
+        , assets = RemoteData.NotAsked
+        , payees = []
+        }
 
 
 fetch : LunchMoney.Token -> (Msg -> msg) -> Cmd msg
@@ -38,33 +60,42 @@ type Msg
     | GotAssets (Result Http.Error LunchMoney.AllAssetsResponse)
 
 
-update : Msg -> Remote -> ( Remote, Cmd msg )
-update msg model =
+update : Msg -> Store -> ( Store, Cmd msg )
+update msg (Store model) =
     case msg of
         GotCategories result ->
-            ( { model
-                | categories =
-                    result
-                        |> Result.mapError stringFromHttpError
-                        |> Result.map LunchMoney.flattenEntries
-                        |> RemoteData.fromResult
-              }
+            ( Store
+                { model
+                    | categories =
+                        result
+                            |> Result.mapError stringFromHttpError
+                            |> Result.map LunchMoney.flattenEntries
+                            |> RemoteData.fromResult
+                }
             , Cmd.none
             )
 
         GotAssets result ->
-            ( { model
-                | assets =
-                    result
-                        |> Result.mapError stringFromHttpError
-                        |> RemoteData.fromResult
-              }
+            ( Store
+                { model
+                    | assets =
+                        result
+                            |> Result.mapError stringFromHttpError
+                            |> RemoteData.fromResult
+                }
             , Cmd.none
             )
 
 
-combined : Remote -> RemoteData String LunchMoneyInfo
-combined remote =
-    RemoteData.map2 LunchMoneyInfo
+combined : Store -> RemoteData String LunchMoneyInfo
+combined (Store remote) =
+    RemoteData.map2
+        (\categories_ assets_ ->
+            LunchMoneyInfo
+                { categories = categories_
+                , assets = assets_
+                , payees = remote.payees
+                }
+        )
         remote.categories
         remote.assets

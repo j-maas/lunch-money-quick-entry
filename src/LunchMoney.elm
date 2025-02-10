@@ -1,4 +1,4 @@
-module LunchMoney exposing (AllAssetsResponse, AllCategoriesResponse, Amount, AssetInfo, CategoryEntry(..), CategoryInfo, InsertResponse, Token, Transaction, amountFromCents, amountToString, assetName, codecAmount, codecTransaction, flattenEntries, getAllAssets, getAllCategories, insertTransactions, showAssetSelection, tokenFromString, tokenToString)
+module LunchMoney exposing (AllAssetsResponse, AllCategoriesResponse, Amount, AssetInfo, CategoryEntry(..), CategoryInfo, InsertResponse, Token, Transaction, amountFromCents, amountToString, assetId, assetIsActive, assetName, codecAmount, codecTransaction, flattenEntries, getAllAssets, getAllCategories, insertTransactions, tokenFromString, tokenToString)
 
 import Date exposing (Date)
 import Http
@@ -55,6 +55,7 @@ type alias Transaction =
     { date : Date
     , amount : Amount
     , categoryId : Maybe Int
+    , assetId : Maybe Int
     }
 
 
@@ -64,6 +65,7 @@ codecTransaction =
         |> Codec.field "date" .date codecDate
         |> Codec.field "amount" .amount codecAmount
         |> Codec.maybeField "category_id" .categoryId Codec.int
+        |> Codec.maybeField "asset_id" .assetId Codec.int
         |> Codec.buildObject
 
 
@@ -220,38 +222,39 @@ type alias AllAssetsResponse =
     List AssetInfo
 
 
-type alias AssetInfo =
-    { id : Int
-    , name : String
-    , displayName : Maybe String
-    , excludeTransactions : Bool
-    , closedOn : Maybe Date
-    }
+type AssetInfo
+    = AssetInfo
+        { id : Int
+        , name : String
+        , displayName : Maybe String
+        , excludeTransactions : Bool
+        , closedOn : Maybe Date
+        }
 
 
-showAssetSelection : List AssetInfo -> List String
-showAssetSelection all =
-    all
-        |> List.filter
-            (\info ->
-                case info.closedOn of
-                    Just _ ->
-                        False
-
-                    Nothing ->
-                        not info.excludeTransactions
-            )
-        |> List.map assetName
+assetId : AssetInfo -> Int
+assetId (AssetInfo info) =
+    info.id
 
 
 assetName : AssetInfo -> String
-assetName info =
+assetName (AssetInfo info) =
     case info.displayName of
         Just displayName ->
             displayName
 
         Nothing ->
             info.name
+
+
+assetIsActive : AssetInfo -> Bool
+assetIsActive (AssetInfo info) =
+    case info.closedOn of
+        Just _ ->
+            False
+
+        Nothing ->
+            not info.excludeTransactions
 
 
 decodeAllAssetsResponse : Decoder AllAssetsResponse
@@ -261,7 +264,16 @@ decodeAllAssetsResponse =
 
 decodeAssetInfo : Decoder AssetInfo
 decodeAssetInfo =
-    Decode.map5 AssetInfo
+    Decode.map5
+        (\id name displayName excludeTransactions closedOn ->
+            AssetInfo
+                { id = id
+                , name = name
+                , displayName = displayName
+                , excludeTransactions = excludeTransactions
+                , closedOn = closedOn
+                }
+        )
         (Decode.field "id" Decode.int)
         (Decode.field "name" Decode.string)
         (Decode.field "display_name" (Decode.maybe Decode.string))

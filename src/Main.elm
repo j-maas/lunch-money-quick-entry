@@ -34,9 +34,9 @@ type alias Model =
 type alias AppModel =
     { token : Maybe LunchMoney.Token
     , dateInput : String
-    , lunchMoneyInfo : LunchMoneyInfo.Remote
+    , lunchMoneyInfo : LunchMoneyInfo.Store
     , categoryInput : String
-    , assetInput : String
+    , selectedAsset : String
     , amountInput : String
     , insertQueue : InsertQueue
     , error : Maybe String
@@ -67,7 +67,7 @@ init flagsRaw =
                 , lunchMoneyInfo = LunchMoneyInfo.empty
                 , amountInput = ""
                 , categoryInput = ""
-                , assetInput = ""
+                , selectedAsset = ""
                 , insertQueue = InsertQueue.empty
                 , error = maybeError
                 }
@@ -104,8 +104,24 @@ updateAppModel msg model =
             let
                 ( newLunchMoneyInfo, cmd ) =
                     LunchMoneyInfo.update m model.lunchMoneyInfo
+
+                selectedAsset =
+                    case newLunchMoneyInfo |> LunchMoneyInfo.combined of
+                        RemoteData.Success info ->
+                            case LunchMoneyInfo.activeAssets info of
+                                first :: _ ->
+                                    LunchMoney.assetId first |> String.fromInt
+
+                                _ ->
+                                    ""
+
+                        _ ->
+                            ""
             in
-            ( { model | lunchMoneyInfo = newLunchMoneyInfo }
+            ( { model
+                | lunchMoneyInfo = newLunchMoneyInfo
+                , selectedAsset = selectedAsset
+              }
             , cmd
             )
 
@@ -135,8 +151,8 @@ updateAppModel msg model =
         ChangedCategoryInput newCategory ->
             ( { model | categoryInput = newCategory }, Cmd.none )
 
-        ChangedAssetInput newAsset ->
-            ( { model | assetInput = newAsset }, Cmd.none )
+        ChangedAssetInput newAssetId ->
+            ( { model | selectedAsset = newAssetId }, Cmd.none )
 
         TappedInsertTransaction ->
             let
@@ -153,7 +169,7 @@ updateAppModel msg model =
                 ( Just token, Ok date, RemoteData.Success info ) ->
                     let
                         matchingCategories =
-                            info.categories
+                            LunchMoneyInfo.categories info
                                 |> List.filter (\category -> category.name == model.categoryInput)
 
                         maybeCategoryId =
@@ -164,6 +180,9 @@ updateAppModel msg model =
                                 _ ->
                                     Nothing
 
+                        maybeAssetId =
+                            String.toInt model.selectedAsset
+
                         transaction =
                             { date = date
                             , amount =
@@ -172,6 +191,7 @@ updateAppModel msg model =
                                     |> Maybe.withDefault 123
                                     |> LunchMoney.amountFromCents
                             , categoryId = maybeCategoryId
+                            , assetId = maybeAssetId
                             }
 
                         ( newInsertQueue, insertCmds ) =
@@ -272,12 +292,12 @@ appView model =
 
         categories =
             lunchMoneyInfo
-                |> RemoteData.map .categories
+                |> RemoteData.map LunchMoneyInfo.categories
                 |> RemoteData.withDefault []
 
         assets =
             lunchMoneyInfo
-                |> RemoteData.map .assets
+                |> RemoteData.map LunchMoneyInfo.activeAssets
                 |> RemoteData.withDefault []
     in
     Html.main_
@@ -324,11 +344,17 @@ appView model =
                 (categories |> List.map .name)
                 [ Attr.required True ]
                 |> labeled "Category" [ Css.width (Css.pct 100) ]
-             , autocompleteInput "assetList"
-                model.assetInput
+             , selectInput
+                model.selectedAsset
                 ChangedAssetInput
-                (assets |> LunchMoney.showAssetSelection)
-                []
+                (assets
+                    |> List.map
+                        (\asset ->
+                            { display = LunchMoney.assetName asset
+                            , key = LunchMoney.assetId asset |> String.fromInt
+                            }
+                        )
+                )
                 |> labeled "Account" [ Css.width (Css.pct 100) ]
              , Html.button
                 [ Attr.type_ "submit"
@@ -374,6 +400,22 @@ autocompleteInput listId current toMsg options attributes =
             |> List.map
                 (\option ->
                     Html.option [ Attr.value option ] []
+                )
+        )
+    ]
+
+
+selectInput : String -> (String -> msg) -> List { display : String, key : String } -> List (Html msg)
+selectInput selectedValue toMsg options =
+    [ Html.select [ Event.onInput toMsg ]
+        (options
+            |> List.map
+                (\option ->
+                    Html.option
+                        [ Attr.value option.key
+                        , Attr.selected (option.key == selectedValue)
+                        ]
+                        [ Html.text option.display ]
                 )
         )
     ]
