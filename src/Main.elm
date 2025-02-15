@@ -1,6 +1,7 @@
 module Main exposing (main)
 
 import Browser
+import Char exposing (isDigit)
 import Css
 import Date
 import Html.Styled as Html exposing (Html)
@@ -66,7 +67,7 @@ init flagsRaw =
                 { token = flags.maybeToken
                 , dateInput = flags.today
                 , lunchMoneyInfo = LunchMoneyInfo.empty
-                , amountInput = ""
+                , amountInput = "0,00"
                 , payeeInput = ""
                 , selectedCategory = ""
                 , selectedAsset = ""
@@ -149,7 +150,25 @@ updateAppModel msg model =
             ( { model | dateInput = newDate }, Cmd.none )
 
         ChangedAmountInput newAmount ->
-            ( { model | amountInput = newAmount }, Cmd.none )
+            let
+                cleanedNewAmount =
+                    String.filter isDigit newAmount
+                        |> String.toInt
+                        |> Maybe.withDefault 0
+                        |> String.fromInt
+
+                beforeDecimal =
+                    String.dropRight 2 cleanedNewAmount
+                        |> String.padLeft 1 '0'
+
+                afterDecimal =
+                    String.right 2 cleanedNewAmount
+                        |> String.padLeft 2 '0'
+
+                formattedNewAmount =
+                    beforeDecimal ++ "," ++ afterDecimal
+            in
+            ( { model | amountInput = formattedNewAmount }, Cmd.none )
 
         ChangedPayeeInput newPayee ->
             ( { model | payeeInput = newPayee }, Cmd.none )
