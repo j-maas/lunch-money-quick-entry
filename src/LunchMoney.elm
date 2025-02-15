@@ -1,4 +1,4 @@
-module LunchMoney exposing (AllAssetsResponse, AllCategoriesResponse, Amount, AssetInfo, CategoryEntry(..), CategoryInfo, InsertResponse, Token, Transaction, amountFromCents, amountToString, assetId, assetIsActive, assetName, codecAmount, codecTransaction, flattenEntries, getAllAssets, getAllCategories, insertTransactions, tokenFromString, tokenToString)
+module LunchMoney exposing (AllAssetsResponse, AllCategoriesResponse, Amount, AssetInfo, CategoryEntry(..), CategoryInfo, InsertResponse, Token, Transaction, amountFromCents, amountToString, assetId, assetIsActive, assetName, codecAmount, codecTransaction, flattenEntries, getAllAssets, getAllCategories, groupEntries, insertTransactions, tokenFromString, tokenToString)
 
 import Date exposing (Date)
 import Http
@@ -163,6 +163,20 @@ flattenEntries entries =
 
                     CategoryGroupEntry e ->
                         e.children
+            )
+
+
+groupEntries : List CategoryEntry -> List ( String, List CategoryInfo )
+groupEntries entries =
+    entries
+        |> List.map
+            (\entry ->
+                case entry of
+                    CategoryGroupEntry group ->
+                        ( group.info.name, group.children )
+
+                    CategoryEntry info ->
+                        ( "", [ info ] )
             )
 
 

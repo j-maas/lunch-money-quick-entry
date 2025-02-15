@@ -35,7 +35,7 @@ type alias AppModel =
     { token : Maybe LunchMoney.Token
     , dateInput : String
     , lunchMoneyInfo : LunchMoneyInfo.Store
-    , categoryInput : String
+    , selectedCategory : String
     , selectedAsset : String
     , amountInput : String
     , insertQueue : InsertQueue
@@ -66,7 +66,7 @@ init flagsRaw =
                 , dateInput = flags.today
                 , lunchMoneyInfo = LunchMoneyInfo.empty
                 , amountInput = ""
-                , categoryInput = ""
+                , selectedCategory = ""
                 , selectedAsset = ""
                 , insertQueue = InsertQueue.empty
                 , error = maybeError
@@ -149,7 +149,7 @@ updateAppModel msg model =
             ( { model | amountInput = newAmount }, Cmd.none )
 
         ChangedCategoryInput newCategory ->
-            ( { model | categoryInput = newCategory }, Cmd.none )
+            ( { model | selectedCategory = newCategory }, Cmd.none )
 
         ChangedAssetInput newAssetId ->
             ( { model | selectedAsset = newAssetId }, Cmd.none )
@@ -161,24 +161,12 @@ updateAppModel msg model =
 
                 date_ =
                     Date.fromIsoString model.dateInput
-
-                lunchMoneyInfo_ =
-                    model.lunchMoneyInfo |> LunchMoneyInfo.combined
             in
-            case ( token_, date_, lunchMoneyInfo_ ) of
-                ( Just token, Ok date, RemoteData.Success info ) ->
+            case ( token_, date_ ) of
+                ( Just token, Ok date ) ->
                     let
-                        matchingCategories =
-                            LunchMoneyInfo.categories info
-                                |> List.filter (\category -> category.name == model.categoryInput)
-
                         maybeCategoryId =
-                            case matchingCategories of
-                                [ match ] ->
-                                    Just match.id
-
-                                _ ->
-                                    Nothing
+                            String.toInt model.selectedCategory
 
                         maybeAssetId =
                             String.toInt model.selectedAsset
@@ -317,7 +305,9 @@ appView model =
                 ]
             , Event.onSubmit TappedInsertTransaction
             ]
-            ([ [ textInput
+            ([ labeled "Access token"
+                []
+                [ textInput
                     (case model.token of
                         Just token ->
                             LunchMoney.tokenToString token
@@ -327,35 +317,57 @@ appView model =
                     )
                     ChangedToken
                     [ Attr.required True ]
-               ]
-                |> labeled "Access token" []
-             , [ dateInput model.dateInput ChangedDateInput [ Attr.required True ] ]
-                |> labeled "Date" []
-             , [ textInput model.amountInput
+                ]
+             , labeled "Date"
+                []
+                [ dateInput model.dateInput ChangedDateInput [ Attr.required True ] ]
+             , labeled "Amount"
+                []
+                [ textInput model.amountInput
                     ChangedAmountInput
                     [ Attr.required True
                     , Attr.attribute "inputmode" "numeric"
                     ]
-               ]
-                |> labeled "Amount" []
-             , autocompleteInput "categoryList"
-                model.categoryInput
-                ChangedCategoryInput
-                (categories |> List.map .name)
-                [ Attr.required True ]
-                |> labeled "Category" [ Css.width (Css.pct 100) ]
-             , selectInput
-                model.selectedAsset
-                ChangedAssetInput
-                (assets
-                    |> List.map
-                        (\asset ->
-                            { display = LunchMoney.assetName asset
-                            , key = LunchMoney.assetId asset |> String.fromInt
-                            }
+                ]
+             , labeled "Category"
+                [ Css.width (Css.pct 100) ]
+                [ selectInput
+                    ChangedCategoryInput
+                    [ Attr.required True ]
+                    (groupedOptions
+                        model.selectedCategory
+                        (( "", [ { display = "Uncategorized", key = "" } ] )
+                            :: (categories
+                                    |> List.map
+                                        (Tuple.mapSecond
+                                            (List.map
+                                                (\category ->
+                                                    { display = category.name
+                                                    , key = category.id |> String.fromInt
+                                                    }
+                                                )
+                                            )
+                                        )
+                               )
                         )
-                )
-                |> labeled "Account" [ Css.width (Css.pct 100) ]
+                    )
+                ]
+             , labeled "Account"
+                [ Css.width (Css.pct 100) ]
+                [ selectInput
+                    ChangedAssetInput
+                    []
+                    (flatOptions model.selectedAsset
+                        (assets
+                            |> List.map
+                                (\asset ->
+                                    { display = LunchMoney.assetName asset
+                                    , key = LunchMoney.assetId asset |> String.fromInt
+                                    }
+                                )
+                        )
+                    )
+                ]
              , Html.button
                 [ Attr.type_ "submit"
                 , Attr.css [ Css.alignSelf Css.start ]
@@ -392,8 +404,8 @@ dateInput value toMsg attributes =
         []
 
 
-autocompleteInput : String -> String -> (String -> msg) -> List String -> List (Html.Attribute msg) -> List (Html msg)
-autocompleteInput listId current toMsg options attributes =
+autocompleteInput : String -> String -> (String -> msg) -> List (Html.Attribute msg) -> List String -> List (Html msg)
+autocompleteInput listId current toMsg attributes options =
     [ textInput current toMsg ([ Attr.list listId, Event.onInput toMsg ] ++ attributes)
     , Html.datalist [ Attr.id listId ]
         (options
@@ -405,20 +417,38 @@ autocompleteInput listId current toMsg options attributes =
     ]
 
 
-selectInput : String -> (String -> msg) -> List { display : String, key : String } -> List (Html msg)
-selectInput selectedValue toMsg options =
-    [ Html.select [ Event.onInput toMsg ]
-        (options
-            |> List.map
-                (\option ->
-                    Html.option
-                        [ Attr.value option.key
-                        , Attr.selected (option.key == selectedValue)
-                        ]
-                        [ Html.text option.display ]
-                )
-        )
-    ]
+selectInput : (String -> msg) -> List (Html.Attribute msg) -> List (Html msg) -> Html msg
+selectInput toMsg attributes options =
+    Html.select (Event.onInput toMsg :: attributes)
+        options
+
+
+flatOptions : String -> List { display : String, key : String } -> List (Html msg)
+flatOptions selectedValue options =
+    options
+        |> List.map
+            (\option ->
+                Html.option
+                    [ Attr.value option.key
+                    , Attr.selected (option.key == selectedValue)
+                    ]
+                    [ Html.text option.display ]
+            )
+
+
+groupedOptions : String -> List ( String, List { display : String, key : String } ) -> List (Html msg)
+groupedOptions selectedValue options =
+    options
+        |> List.concatMap
+            (\( groupName, children ) ->
+                if String.isEmpty groupName then
+                    flatOptions selectedValue children
+
+                else
+                    [ Html.optgroup [ Attr.attribute "label" groupName ]
+                        (flatOptions selectedValue children)
+                    ]
+            )
 
 
 labeled : String -> List Css.Style -> List (Html msg) -> Html msg

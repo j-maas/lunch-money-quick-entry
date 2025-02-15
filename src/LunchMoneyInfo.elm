@@ -8,7 +8,7 @@ import Utils exposing (stringFromHttpError)
 
 type Store
     = Store
-        { categories : RemoteData String (List LunchMoney.CategoryInfo)
+        { categories : RemoteData String (List ( String, List LunchMoney.CategoryInfo ))
         , assets : RemoteData String (List LunchMoney.AssetInfo)
         , payees : List String
         }
@@ -16,13 +16,13 @@ type Store
 
 type LunchMoneyInfo
     = LunchMoneyInfo
-        { categories : List LunchMoney.CategoryInfo
+        { categories : List ( String, List LunchMoney.CategoryInfo )
         , assets : List LunchMoney.AssetInfo
         , payees : List String
         }
 
 
-categories : LunchMoneyInfo -> List LunchMoney.CategoryInfo
+categories : LunchMoneyInfo -> List ( String, List LunchMoney.CategoryInfo )
 categories (LunchMoneyInfo info) =
     info.categories
 
@@ -69,7 +69,7 @@ update msg (Store model) =
                     | categories =
                         result
                             |> Result.mapError stringFromHttpError
-                            |> Result.map LunchMoney.flattenEntries
+                            |> Result.map LunchMoney.groupEntries
                             |> RemoteData.fromResult
                 }
             , Cmd.none
