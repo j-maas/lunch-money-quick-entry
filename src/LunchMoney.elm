@@ -1,4 +1,4 @@
-module LunchMoney exposing (AllAssetsResponse, AllCategoriesResponse, Amount, AssetInfo, CategoryEntry(..), CategoryInfo, InsertResponse, Token, Transaction, amountFromCents, amountToString, assetId, assetIsActive, assetName, codecAmount, codecTransaction, flattenEntries, getAllAssets, getAllCategories, groupEntries, insertTransactions, tokenFromString, tokenToString)
+module LunchMoney exposing (AllAssetsResponse, AllCategoriesResponse, AllTransactionsResponse, Amount, AssetInfo, CategoryEntry(..), CategoryInfo, InsertResponse, Token, Transaction, amountFromCents, amountToString, assetId, assetIsActive, assetName, codecAmount, codecTransaction, flattenEntries, getAllAssets, getAllCategories, getAllTransactions, groupEntries, insertTransactions, tokenFromString, tokenToString)
 
 import Date exposing (Date)
 import Http
@@ -54,6 +54,7 @@ amountToString (Cents cents) =
 type alias Transaction =
     { date : Date
     , amount : Amount
+    , payee : Maybe String
     , categoryId : Maybe Int
     , assetId : Maybe Int
     }
@@ -64,6 +65,16 @@ codecTransaction =
     Codec.object Transaction
         |> Codec.field "date" .date codecDate
         |> Codec.field "amount" .amount codecAmount
+        |> Codec.maybeField "payee"
+            (\transaction ->
+                case transaction.payee of
+                    Nothing ->
+                        Just "[No Payee]"
+
+                    Just payee ->
+                        Just payee
+            )
+            Codec.string
         |> Codec.maybeField "category_id" .categoryId Codec.int
         |> Codec.maybeField "asset_id" .assetId Codec.int
         |> Codec.buildObject
@@ -104,7 +115,9 @@ insertTransactions token transactions toMsg =
         (transactions
             |> Encode.encoder
                 (Encode.object
-                    [ Encode.required "transactions" identity (Encode.list (Codec.encoder codecTransaction))
+                    [ Encode.required "transactions"
+                        identity
+                        (Encode.list (Codec.encoder codecTransaction))
                     ]
                 )
         )
@@ -119,6 +132,26 @@ type alias InsertResponse =
 decodeInsertResponse : Decoder InsertResponse
 decodeInsertResponse =
     Decode.field "ids" (Decode.list Decode.int)
+
+
+getAllTransactions : Token -> { start : Date, end : Date } -> (Result Http.Error AllTransactionsResponse -> msg) -> Cmd msg
+getAllTransactions token range toMsg =
+    get token
+        [ "v1", "transactions" ]
+        [ ( "start_date", Date.toIsoString range.start )
+        , ( "end_date", Date.toIsoString range.end )
+        ]
+        decodeAllTransactionsResponse
+        toMsg
+
+
+type alias AllTransactionsResponse =
+    List Transaction
+
+
+decodeAllTransactionsResponse : Decoder AllTransactionsResponse
+decodeAllTransactionsResponse =
+    Decode.field "transactions" (Decode.list (Codec.decoder codecTransaction))
 
 
 getAllCategories : Token -> (Result Http.Error AllCategoriesResponse -> msg) -> Cmd msg

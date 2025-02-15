@@ -1,8 +1,10 @@
 module LunchMoneyInfo exposing (LunchMoneyInfo, Msg, Store, activeAssets, categories, combined, empty, fetch, payees, update)
 
+import Date exposing (Date)
 import Http
 import LunchMoney
 import RemoteData exposing (RemoteData)
+import Set
 import Utils exposing (stringFromHttpError)
 
 
@@ -10,7 +12,7 @@ type Store
     = Store
         { categories : RemoteData String (List ( String, List LunchMoney.CategoryInfo ))
         , assets : RemoteData String (List LunchMoney.AssetInfo)
-        , payees : List String
+        , transactions : RemoteData String (List LunchMoney.Transaction)
         }
 
 
@@ -43,21 +45,32 @@ empty =
     Store
         { categories = RemoteData.NotAsked
         , assets = RemoteData.NotAsked
-        , payees = []
+        , transactions = RemoteData.NotAsked
         }
 
 
-fetch : LunchMoney.Token -> (Msg -> msg) -> Cmd msg
-fetch token toMsg =
+fetch : LunchMoney.Token -> Date -> (Msg -> msg) -> Cmd msg
+fetch token today toMsg =
+    let
+        start =
+            Date.add Date.Months -3 today
+
+        end =
+            today
+    in
     Cmd.batch
         [ LunchMoney.getAllCategories token (GotCategories >> toMsg)
         , LunchMoney.getAllAssets token (GotAssets >> toMsg)
+        , LunchMoney.getAllTransactions token
+            { start = start, end = end }
+            (GotTransactions >> toMsg)
         ]
 
 
 type Msg
     = GotCategories (Result Http.Error LunchMoney.AllCategoriesResponse)
     | GotAssets (Result Http.Error LunchMoney.AllAssetsResponse)
+    | GotTransactions (Result Http.Error LunchMoney.AllTransactionsResponse)
 
 
 update : Msg -> Store -> ( Store, Cmd msg )
@@ -86,16 +99,47 @@ update msg (Store model) =
             , Cmd.none
             )
 
+        GotTransactions result ->
+            ( Store
+                { model
+                    | transactions =
+                        result
+                            |> Result.mapError stringFromHttpError
+                            |> RemoteData.fromResult
+                }
+            , Cmd.none
+            )
+
 
 combined : Store -> RemoteData String LunchMoneyInfo
 combined (Store remote) =
-    RemoteData.map2
-        (\categories_ assets_ ->
+    RemoteData.map3
+        (\categories_ assets_ transactions_ ->
             LunchMoneyInfo
                 { categories = categories_
                 , assets = assets_
-                , payees = remote.payees
+                , payees =
+                    transactions_
+                        |> List.filterMap
+                            (\transaction ->
+                                transaction.payee
+                                    |> Maybe.andThen
+                                        (\payee ->
+                                            case payee of
+                                                "" ->
+                                                    Nothing
+
+                                                "[No Payee]" ->
+                                                    Nothing
+
+                                                p ->
+                                                    Just p
+                                        )
+                            )
+                        |> Set.fromList
+                        |> Set.toList
                 }
         )
         remote.categories
         remote.assets
+        remote.transactions

@@ -35,6 +35,7 @@ type alias AppModel =
     { token : Maybe LunchMoney.Token
     , dateInput : String
     , lunchMoneyInfo : LunchMoneyInfo.Store
+    , payeeInput : String
     , selectedCategory : String
     , selectedAsset : String
     , amountInput : String
@@ -54,18 +55,19 @@ init flagsRaw =
         Ok flags ->
             let
                 ( maybeError, maybeLunchMoneyInfoCmd ) =
-                    case flags.maybeToken of
-                        Just token ->
-                            ( Nothing, LunchMoneyInfo.fetch token GotLunchMoneyInfoMsg )
+                    case ( flags.maybeToken, Date.fromIsoString flags.today ) of
+                        ( Just token, Ok today ) ->
+                            ( Nothing, LunchMoneyInfo.fetch token today GotLunchMoneyInfoMsg )
 
-                        Nothing ->
-                            ( Just "No token given at startup, not getting updates.", Cmd.none )
+                        _ ->
+                            ( Just "No token given at startup or invalid date, not getting updates.", Cmd.none )
             in
             ( Ok
                 { token = flags.maybeToken
                 , dateInput = flags.today
                 , lunchMoneyInfo = LunchMoneyInfo.empty
                 , amountInput = ""
+                , payeeInput = ""
                 , selectedCategory = ""
                 , selectedAsset = ""
                 , insertQueue = InsertQueue.empty
@@ -80,6 +82,7 @@ type Msg
     | ChangedToken String
     | ChangedDateInput String
     | ChangedAmountInput String
+    | ChangedPayeeInput String
     | ChangedCategoryInput String
     | ChangedAssetInput String
     | TappedInsertTransaction
@@ -148,6 +151,9 @@ updateAppModel msg model =
         ChangedAmountInput newAmount ->
             ( { model | amountInput = newAmount }, Cmd.none )
 
+        ChangedPayeeInput newPayee ->
+            ( { model | payeeInput = newPayee }, Cmd.none )
+
         ChangedCategoryInput newCategory ->
             ( { model | selectedCategory = newCategory }, Cmd.none )
 
@@ -178,6 +184,12 @@ updateAppModel msg model =
                                     |> String.toInt
                                     |> Maybe.withDefault 123
                                     |> LunchMoney.amountFromCents
+                            , payee =
+                                if String.isEmpty model.payeeInput then
+                                    Nothing
+
+                                else
+                                    Just model.payeeInput
                             , categoryId = maybeCategoryId
                             , assetId = maybeAssetId
                             }
@@ -278,6 +290,11 @@ appView model =
             model.lunchMoneyInfo
                 |> LunchMoneyInfo.combined
 
+        payees =
+            lunchMoneyInfo
+                |> RemoteData.map LunchMoneyInfo.payees
+                |> RemoteData.withDefault []
+
         categories =
             lunchMoneyInfo
                 |> RemoteData.map LunchMoneyInfo.categories
@@ -329,11 +346,20 @@ appView model =
                     , Attr.attribute "inputmode" "numeric"
                     ]
                 ]
+             , labeled "Payee"
+                []
+                (autocompleteInput
+                    "payeeList"
+                    model.payeeInput
+                    ChangedPayeeInput
+                    []
+                    payees
+                )
              , labeled "Category"
-                [ Css.width (Css.pct 100) ]
+                []
                 [ selectInput
                     ChangedCategoryInput
-                    [ Attr.required True ]
+                    []
                     (groupedOptions
                         model.selectedCategory
                         (( "", [ { display = "Uncategorized", key = "" } ] )
@@ -353,7 +379,7 @@ appView model =
                     )
                 ]
              , labeled "Account"
-                [ Css.width (Css.pct 100) ]
+                []
                 [ selectInput
                     ChangedAssetInput
                     []
