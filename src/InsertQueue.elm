@@ -1,9 +1,8 @@
-module InsertQueue exposing (InsertQueue, Msg, Processing(..), codecInsertQueue, empty, insert, processing, update)
+module InsertQueue exposing (ClientError(..), Error(..), InsertQueue, Msg, Processing(..), ServerError(..), codecInsertQueue, empty, insert, processQueue, processing, size, update)
 
 import Http
 import LunchMoney exposing (Transaction)
 import TsJson.Codec as Codec exposing (Codec)
-import Utils exposing (stringFromHttpError)
 
 
 type InsertQueue
@@ -16,7 +15,25 @@ type InsertQueue
 type Processing
     = Idle
     | Loading (List Transaction)
-    | Error String (List Transaction)
+    | Failed Error
+
+
+type Error
+    = NoNetwork
+    | ClientError ClientError
+    | ServerError ServerError
+    | UnknownError String
+
+
+type ClientError
+    = BadClientStatus Int
+    | BadUrl String
+    | BadBody String
+
+
+type ServerError
+    = Timeout
+    | BadServerStatus Int
 
 
 empty : InsertQueue
@@ -30,6 +47,15 @@ empty =
 processing : InsertQueue -> Processing
 processing (InsertQueue iq) =
     iq.processing
+
+
+size : InsertQueue -> Int
+size (InsertQueue iq) =
+    let
+        processed =
+            getProcessedQueue (InsertQueue iq)
+    in
+    List.length iq.queue + List.length processed
 
 
 codecInsertQueue : Codec InsertQueue
@@ -53,7 +79,7 @@ codecInsertQueue =
 codecProcessing : Codec Processing
 codecProcessing =
     Codec.custom (Just "processing")
-        (\idle loading error value ->
+        (\idle loading value ->
             case value of
                 Idle ->
                     idle
@@ -61,12 +87,11 @@ codecProcessing =
                 Loading q ->
                     loading q
 
-                Error e q ->
-                    error e q
+                Failed _ ->
+                    idle
         )
         |> Codec.variant0 "idle" Idle
         |> Codec.positionalVariant1 "loading" Loading (Codec.list LunchMoney.codecTransaction)
-        |> Codec.positionalVariant2 "error" Error Codec.string (Codec.list LunchMoney.codecTransaction)
         |> Codec.buildCustom
 
 
@@ -86,9 +111,37 @@ update msg (InsertQueue iq) =
                         }
 
                 Err err ->
+                    let
+                        queue =
+                            getProcessedQueue (InsertQueue iq) ++ iq.queue
+
+                        error =
+                            case err of
+                                Http.NetworkError ->
+                                    NoNetwork
+
+                                Http.Timeout ->
+                                    ServerError Timeout
+
+                                Http.BadStatus status ->
+                                    if 400 <= status && status < 500 then
+                                        ClientError (BadClientStatus status)
+
+                                    else if 500 <= status && status < 600 then
+                                        ServerError (BadServerStatus status)
+
+                                    else
+                                        UnknownError ("Bad status code: " ++ String.fromInt status)
+
+                                Http.BadUrl badUrl ->
+                                    ClientError (BadUrl badUrl)
+
+                                Http.BadBody badBody ->
+                                    ClientError (BadBody badBody)
+                    in
                     InsertQueue
-                        { queue = iq.queue
-                        , processing = Error (stringFromHttpError err) (getProcessedQueue (InsertQueue iq))
+                        { queue = queue
+                        , processing = Failed error
                         }
 
 
@@ -101,8 +154,8 @@ getProcessedQueue (InsertQueue iq) =
         Loading t ->
             t
 
-        Error _ t ->
-            t
+        Failed _ ->
+            []
 
 
 insert : LunchMoney.Token -> (Msg -> msg) -> List Transaction -> InsertQueue -> ( InsertQueue, Cmd msg )
@@ -119,7 +172,10 @@ add transactions (InsertQueue iq) =
 processQueue : LunchMoney.Token -> (Msg -> msg) -> InsertQueue -> ( InsertQueue, Cmd msg )
 processQueue token toMsg (InsertQueue iq) =
     case iq.processing of
-        Idle ->
+        Loading _ ->
+            ( InsertQueue iq, Cmd.none )
+
+        _ ->
             ( InsertQueue
                 { queue = []
                 , processing = Loading iq.queue
@@ -128,20 +184,3 @@ processQueue token toMsg (InsertQueue iq) =
                 [ LunchMoney.insertTransactions token iq.queue (GotResponse >> toMsg)
                 ]
             )
-
-        Error _ previousTransactions ->
-            let
-                transactionsToInsert =
-                    previousTransactions ++ iq.queue
-            in
-            ( InsertQueue
-                { queue = []
-                , processing = Loading transactionsToInsert
-                }
-            , Cmd.batch
-                [ LunchMoney.insertTransactions token transactionsToInsert (GotResponse >> toMsg)
-                ]
-            )
-
-        Loading _ ->
-            ( InsertQueue iq, Cmd.none )

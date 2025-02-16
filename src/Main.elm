@@ -87,6 +87,7 @@ type Msg
     | ChangedCategoryInput String
     | ChangedAssetInput String
     | TappedInsertTransaction
+    | TappedProcessQueue
     | GotInsertQueueMsg InsertQueue.Msg
 
 
@@ -152,9 +153,7 @@ updateAppModel msg model =
         ChangedAmountInput newAmount ->
             let
                 cleanedNewAmount =
-                    String.filter isDigit newAmount
-                        |> String.toInt
-                        |> Maybe.withDefault 0
+                    cleanAmountInput newAmount
                         |> String.fromInt
 
                 beforeDecimal =
@@ -199,9 +198,7 @@ updateAppModel msg model =
                         transaction =
                             { date = date
                             , amount =
-                                model.amountInput
-                                    |> String.toInt
-                                    |> Maybe.withDefault 123
+                                cleanAmountInput model.amountInput
                                     |> LunchMoney.amountFromCents
                             , payee =
                                 if String.isEmpty model.payeeInput then
@@ -225,6 +222,24 @@ updateAppModel msg model =
                 _ ->
                     ( model, Cmd.none )
 
+        TappedProcessQueue ->
+            let
+                token_ =
+                    model.token
+            in
+            case token_ of
+                Just token ->
+                    let
+                        ( newInsertQueue, iqCmds ) =
+                            InsertQueue.processQueue token GotInsertQueueMsg model.insertQueue
+                    in
+                    ( { model | insertQueue = newInsertQueue }
+                    , iqCmds
+                    )
+
+                _ ->
+                    ( model, Cmd.none )
+
         GotInsertQueueMsg m ->
             let
                 newInsertQueue =
@@ -233,6 +248,13 @@ updateAppModel msg model =
             ( { model | insertQueue = newInsertQueue }
             , storeInsertQueue newInsertQueue
             )
+
+
+cleanAmountInput : String -> Int
+cleanAmountInput amountInput =
+    String.filter isDigit amountInput
+        |> String.toInt
+        |> Maybe.withDefault 0
 
 
 tokenSettingKey : String
@@ -294,8 +316,20 @@ appView model =
                     [ loaderView
                     ]
 
-                InsertQueue.Error error _ ->
-                    [ Html.text ("An error occurred: " ++ error) ]
+                InsertQueue.Failed error ->
+                    [ Html.p []
+                        [ Html.text
+                            (String.fromInt (InsertQueue.size model.insertQueue)
+                                ++ " transactions to be inserted, stored offline."
+                            )
+                        ]
+                    , Html.p [] [ Html.text (displayInsertQueueError error) ]
+                    , Html.button
+                        [ Event.onClick TappedProcessQueue
+                        , Attr.type_ "button"
+                        ]
+                        [ Html.text "Try again" ]
+                    ]
 
         errorDisplay =
             case model.error of
@@ -361,8 +395,7 @@ appView model =
                 []
                 [ textInput model.amountInput
                     ChangedAmountInput
-                    [ Attr.required True
-                    , Attr.attribute "inputmode" "numeric"
+                    [ Attr.attribute "inputmode" "numeric"
                     ]
                 ]
              , labeled "Payee"
@@ -514,3 +547,36 @@ labeled label styles children =
 loaderView : Html Msg
 loaderView =
     Html.text "Loading..."
+
+
+displayInsertQueueError : InsertQueue.Error -> String
+displayInsertQueueError error =
+    case error of
+        InsertQueue.NoNetwork ->
+            "Please check your internet connection."
+
+        InsertQueue.ClientError err ->
+            "I did something wrong: "
+                ++ (case err of
+                        InsertQueue.BadClientStatus status ->
+                            "Bad status code: " ++ String.fromInt status
+
+                        InsertQueue.BadUrl url ->
+                            "Bad url: " ++ url
+
+                        InsertQueue.BadBody body ->
+                            "Bad body: " ++ body
+                   )
+
+        InsertQueue.ServerError err ->
+            "The server is not available: "
+                ++ (case err of
+                        InsertQueue.BadServerStatus status ->
+                            "Bad status code: " ++ String.fromInt status
+
+                        InsertQueue.Timeout ->
+                            "Timeout"
+                   )
+
+        InsertQueue.UnknownError err ->
+            "Something went wrong: " ++ err

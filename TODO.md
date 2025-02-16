@@ -1,2 +1,2 @@
-- [ ] Show unsent transactions and add button to send them.
+- [ ] Persist unsent transactions.
 - [ ] Report bug that the dropdown for an input with a datalist overlays the keyboard.
