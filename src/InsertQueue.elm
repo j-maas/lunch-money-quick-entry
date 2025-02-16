@@ -1,4 +1,4 @@
-module InsertQueue exposing (ClientError(..), Error(..), InsertQueue, Msg, Processing(..), ServerError(..), codecInsertQueue, empty, insert, processQueue, processing, size, update)
+module InsertQueue exposing (ClientError(..), Error(..), InsertQueue, Msg, Processing(..), ServerError(..), codecInsertQueue, empty, insert, isEmpty, processQueue, processing, size, update)
 
 import Http
 import LunchMoney exposing (Transaction)
@@ -49,50 +49,35 @@ processing (InsertQueue iq) =
     iq.processing
 
 
+isEmpty : InsertQueue -> Bool
+isEmpty (InsertQueue iq) =
+    case iq.processing of
+        Loading t ->
+            List.isEmpty t
+
+        _ ->
+            List.isEmpty iq.queue
+
+
 size : InsertQueue -> Int
-size (InsertQueue iq) =
-    let
-        processed =
-            getProcessedQueue (InsertQueue iq)
-    in
-    List.length iq.queue + List.length processed
+size iq =
+    getAllUnsent iq
+        |> List.length
 
 
 codecInsertQueue : Codec InsertQueue
 codecInsertQueue =
-    Codec.object
-        (\queue proc ->
-            InsertQueue
-                { queue = queue
-                , processing = proc
-                }
-        )
-        |> Codec.field "queue"
-            (\(InsertQueue iq) -> iq.queue)
-            (Codec.list LunchMoney.codecTransaction)
-        |> Codec.field "processing"
-            (\(InsertQueue iq) -> iq.processing)
-            codecProcessing
-        |> Codec.buildObject
-
-
-codecProcessing : Codec Processing
-codecProcessing =
-    Codec.custom (Just "processing")
-        (\idle loading value ->
-            case value of
-                Idle ->
-                    idle
-
-                Loading q ->
-                    loading q
-
-                Failed _ ->
-                    idle
-        )
-        |> Codec.variant0 "idle" Idle
-        |> Codec.positionalVariant1 "loading" Loading (Codec.list LunchMoney.codecTransaction)
-        |> Codec.buildCustom
+    Codec.list LunchMoney.codecTransaction
+        |> Codec.map
+            (\transactions ->
+                InsertQueue
+                    { queue = transactions
+                    , processing = Idle
+                    }
+            )
+            (\iq ->
+                getAllUnsent iq
+            )
 
 
 type Msg
@@ -113,7 +98,7 @@ update msg (InsertQueue iq) =
                 Err err ->
                     let
                         queue =
-                            getProcessedQueue (InsertQueue iq) ++ iq.queue
+                            getAllUnsent (InsertQueue iq)
 
                         error =
                             case err of
@@ -145,17 +130,21 @@ update msg (InsertQueue iq) =
                         }
 
 
-getProcessedQueue : InsertQueue -> List Transaction
-getProcessedQueue (InsertQueue iq) =
-    case iq.processing of
-        Idle ->
-            []
+getAllUnsent : InsertQueue -> List Transaction
+getAllUnsent (InsertQueue iq) =
+    let
+        loading =
+            case iq.processing of
+                Idle ->
+                    []
 
-        Loading t ->
-            t
+                Loading t ->
+                    t
 
-        Failed _ ->
-            []
+                Failed _ ->
+                    []
+    in
+    loading ++ iq.queue
 
 
 insert : LunchMoney.Token -> (Msg -> msg) -> List Transaction -> InsertQueue -> ( InsertQueue, Cmd msg )

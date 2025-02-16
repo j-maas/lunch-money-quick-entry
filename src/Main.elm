@@ -71,7 +71,9 @@ init flagsRaw =
                 , payeeInput = ""
                 , selectedCategory = ""
                 , selectedAsset = ""
-                , insertQueue = InsertQueue.empty
+                , insertQueue =
+                    flags.maybeInsertQueue
+                        |> Maybe.withDefault InsertQueue.empty
                 , error = maybeError
                 }
             , maybeLunchMoneyInfoCmd
@@ -308,28 +310,36 @@ appView : AppModel -> Html Msg
 appView model =
     let
         insertionIndicator =
+            let
+                displayUnsent error =
+                    Html.p []
+                        [ Html.text
+                            (String.fromInt (InsertQueue.size model.insertQueue)
+                                ++ " transactions to be inserted, stored offline."
+                            )
+                        ]
+                        :: error
+                        ++ [ Html.button
+                                [ Event.onClick TappedProcessQueue
+                                , Attr.type_ "button"
+                                ]
+                                [ Html.text "Try again" ]
+                           ]
+            in
             case InsertQueue.processing model.insertQueue of
                 InsertQueue.Idle ->
-                    []
+                    if InsertQueue.isEmpty model.insertQueue then
+                        []
+
+                    else
+                        displayUnsent []
 
                 InsertQueue.Loading _ ->
                     [ loaderView
                     ]
 
                 InsertQueue.Failed error ->
-                    [ Html.p []
-                        [ Html.text
-                            (String.fromInt (InsertQueue.size model.insertQueue)
-                                ++ " transactions to be inserted, stored offline."
-                            )
-                        ]
-                    , Html.p [] [ Html.text (displayInsertQueueError error) ]
-                    , Html.button
-                        [ Event.onClick TappedProcessQueue
-                        , Attr.type_ "button"
-                        ]
-                        [ Html.text "Try again" ]
-                    ]
+                    displayUnsent [ Html.p [] [ Html.text (displayInsertQueueError error) ] ]
 
         errorDisplay =
             case model.error of
