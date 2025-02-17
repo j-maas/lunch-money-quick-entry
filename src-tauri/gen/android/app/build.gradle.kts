@@ -41,6 +41,7 @@ android {
     }
     buildTypes {
         getByName("debug") {
+            resValue("string", "main_activity_title", "Dev QLME")
             manifestPlaceholders["usesCleartextTraffic"] = "true"
             isDebuggable = true
             isJniDebuggable = true
@@ -52,6 +53,8 @@ android {
             }
         }
         getByName("release") {
+            resValue("string", "main_activity_title", "Quick Lunch Money Entry")
+            applicationIdSuffix = ".release"
             isMinifyEnabled = true
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }

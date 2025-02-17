@@ -1,25 +1,58 @@
-module LunchMoneyInfo exposing (LunchMoneyInfo, Msg, Store, activeAssets, categories, combined, empty, fetch, payees, update)
+module LunchMoneyInfo exposing (LunchMoneyInfo, Msg, Store, StoreData, activeAssets, categories, codecStore, combined, empty, fetch, payees, update)
 
 import Date exposing (Date)
 import Http
-import LunchMoney
+import LunchMoney exposing (codecTransaction)
 import RemoteData exposing (RemoteData)
 import Set
+import TsJson.Codec as Codec exposing (Codec)
 import Utils exposing (stringFromHttpError)
 
 
 type Store
-    = Store
-        { categories : RemoteData String (List ( String, List LunchMoney.CategoryInfo ))
-        , assets : RemoteData String (List LunchMoney.AssetInfo)
-        , transactions : RemoteData String (List LunchMoney.Transaction)
-        }
+    = Store StoreData
+
+
+type alias StoreData =
+    { categories : RemoteData String (List ( String, List LunchMoney.CategoryInfo ))
+    , assets : RemoteData String (List LunchMoney.AssetInfo)
+    , transactions : RemoteData String (List LunchMoney.Transaction)
+    }
+
+
+codecStore : Codec Store
+codecStore =
+    Codec.object
+        (\categories_ assets_ transcations_ ->
+            Store
+                { categories = RemoteData.Success categories_
+                , assets = RemoteData.Success assets_
+                , transactions = RemoteData.Success transcations_
+                }
+        )
+        |> Codec.field "categories" (getFromStore .categories) (Codec.list (Codec.tuple Codec.string (Codec.list LunchMoney.codecCategoryInfo)))
+        |> Codec.field "assets" (getFromStore .assets) (Codec.list LunchMoney.codecAssetInfo)
+        |> Codec.field "transactions" (getFromStore .transactions) (Codec.list codecTransaction)
+        |> Codec.buildObject
+
+
+getFromStore : (StoreData -> RemoteData error (List a)) -> Store -> List a
+getFromStore getter (Store store) =
+    getter store
+        |> remoteGetList
+
+
+remoteGetList : RemoteData error (List a) -> List a
+remoteGetList remote =
+    remote
+        |> RemoteData.withDefault []
 
 
 type LunchMoneyInfo
     = LunchMoneyInfo
         { categories : List ( String, List LunchMoney.CategoryInfo )
         , assets : List LunchMoney.AssetInfo
+        , transactions : List LunchMoney.Transaction
         , payees : List String
         }
 
@@ -118,6 +151,7 @@ combined (Store remote) =
             LunchMoneyInfo
                 { categories = categories_
                 , assets = assets_
+                , transactions = transactions_
                 , payees =
                     transactions_
                         |> List.filterMap

@@ -1,4 +1,4 @@
-module LunchMoney exposing (AllAssetsResponse, AllCategoriesResponse, AllTransactionsResponse, Amount, AssetInfo, CategoryEntry(..), CategoryInfo, InsertResponse, Token, Transaction, amountFromCents, amountToString, assetId, assetIsActive, assetName, codecAmount, codecTransaction, flattenEntries, getAllAssets, getAllCategories, getAllTransactions, groupEntries, insertTransactions, tokenFromString, tokenToString)
+module LunchMoney exposing (AllAssetsResponse, AllCategoriesResponse, AllTransactionsResponse, Amount, AssetInfo, CategoryEntry(..), CategoryInfo, InsertResponse, Token, Transaction, amountFromCents, amountToString, assetId, assetIsActive, assetName, codecAmount, codecAssetInfo, codecCategoryInfo, codecTransaction, flattenEntries, getAllAssets, getAllCategories, getAllTransactions, groupEntries, insertTransactions, tokenFromString, tokenToString)
 
 import Date exposing (Date)
 import Http
@@ -248,12 +248,18 @@ decodeNestedCategories =
         |> Decode.list
 
 
+codecCategoryInfo : Codec CategoryInfo
+codecCategoryInfo =
+    Codec.object CategoryInfo
+        |> Codec.field "id" .id Codec.int
+        |> Codec.field "name" .name Codec.string
+        |> Codec.field "archived" .archived Codec.bool
+        |> Codec.buildObject
+
+
 decodeCategoryInfo : Decoder CategoryInfo
 decodeCategoryInfo =
-    Decode.map3 CategoryInfo
-        (Decode.field "id" Decode.int)
-        (Decode.field "name" Decode.string)
-        (Decode.field "archived" Decode.bool)
+    Codec.decoder codecCategoryInfo
 
 
 getAllAssets : Token -> (Result Http.Error AllAssetsResponse -> msg) -> Cmd msg
@@ -309,9 +315,9 @@ decodeAllAssetsResponse =
     Decode.field "assets" (Decode.list decodeAssetInfo)
 
 
-decodeAssetInfo : Decoder AssetInfo
-decodeAssetInfo =
-    Decode.map5
+codecAssetInfo : Codec AssetInfo
+codecAssetInfo =
+    Codec.object
         (\id name displayName excludeTransactions closedOn ->
             AssetInfo
                 { id = id
@@ -321,27 +327,17 @@ decodeAssetInfo =
                 , closedOn = closedOn
                 }
         )
-        (Decode.field "id" Decode.int)
-        (Decode.field "name" Decode.string)
-        (Decode.field "display_name" (Decode.maybe Decode.string))
-        (Decode.field "exclude_transactions" Decode.bool)
-        (Decode.field "closed_on" (Decode.maybe decodeDate))
+        |> Codec.field "id" (\(AssetInfo info) -> info.id) Codec.int
+        |> Codec.field "name" (\(AssetInfo info) -> info.name) Codec.string
+        |> Codec.maybeField "display_name" (\(AssetInfo info) -> info.displayName) Codec.string
+        |> Codec.field "exclude_transactions" (\(AssetInfo info) -> info.excludeTransactions) Codec.bool
+        |> Codec.maybeField "closed_on" (\(AssetInfo info) -> info.closedOn) codecDate
+        |> Codec.buildObject
 
 
-decodeDate : Decoder Date
-decodeDate =
-    Decode.string
-        |> Decode.andThen
-            (Decode.andThenInit
-                (\raw ->
-                    case Date.fromIsoString raw of
-                        Ok date ->
-                            Decode.succeed date
-
-                        Err err ->
-                            Decode.fail err
-                )
-            )
+decodeAssetInfo : Decoder AssetInfo
+decodeAssetInfo =
+    Codec.decoder codecAssetInfo
 
 
 get : Token -> List String -> List ( String, String ) -> Decoder a -> (Result Http.Error a -> msg) -> Cmd msg

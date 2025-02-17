@@ -3,6 +3,7 @@ module InteropDefinitions exposing (Flags, FromElm(..), ToElm(..), interop)
 import InsertQueue exposing (InsertQueue)
 import Json.Encode exposing (Value)
 import LunchMoney
+import LunchMoneyInfo
 import TsJson.Codec as Codec exposing (Codec)
 import TsJson.Decode as TsDecode exposing (Decoder)
 import TsJson.Encode as TsEncode exposing (Encoder)
@@ -24,23 +25,33 @@ type alias Flags =
     { today : String
     , maybeToken : Maybe LunchMoney.Token
     , maybeInsertQueue : Maybe InsertQueue
+    , maybeLunchMoneyInfo : Maybe LunchMoneyInfo.Store
     }
 
 
 flags : Decoder Flags
 flags =
-    TsDecode.map3 Flags
+    TsDecode.map4 Flags
         (TsDecode.field "today" TsDecode.string)
-        (TsDecode.maybe (TsDecode.field "token" tsDecodeToken)
-            |> TsDecode.map (Maybe.andThen identity)
-        )
+        (TsDecode.maybe (TsDecode.field "token" tsDecodeToken))
         (TsDecode.maybe (TsDecode.field "insertQueue" (Codec.decoder InsertQueue.codecInsertQueue)))
+        (TsDecode.maybe (TsDecode.field "lunchMoneyInfo" (Codec.decoder LunchMoneyInfo.codecStore)))
 
 
-tsDecodeToken : Decoder (Maybe LunchMoney.Token)
+tsDecodeToken : Decoder LunchMoney.Token
 tsDecodeToken =
     TsDecode.string
-        |> TsDecode.map LunchMoney.tokenFromString
+        |> TsDecode.andThen
+            (TsDecode.andThenInit
+                (\raw ->
+                    case LunchMoney.tokenFromString raw of
+                        Just token ->
+                            TsDecode.succeed token
+
+                        Nothing ->
+                            TsDecode.fail ("Invalid token: '" ++ raw ++ "'")
+                )
+            )
 
 
 type FromElm

@@ -1,2 +1,2 @@
-- [ ] Persist unsent transactions.
+- [ ] Persist LunchMoneyInfo.
 - [ ] Report bug that the dropdown for an input with a datalist overlays the keyboard.

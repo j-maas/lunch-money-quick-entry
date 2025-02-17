@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "npm run build:interop-types && vite",
     "build": "tsc && npm run build:interop-types && vite build",
+    "build:android": "npm run tauri android build -- -t aarch64",
     "build:interop-types": "elm-ts-interop --output src/Main.elm.d.ts",
     "preview": "vite preview",
     "tauri": "tauri"

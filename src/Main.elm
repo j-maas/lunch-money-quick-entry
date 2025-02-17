@@ -66,7 +66,7 @@ init flagsRaw =
             ( Ok
                 { token = flags.maybeToken
                 , dateInput = flags.today
-                , lunchMoneyInfo = LunchMoneyInfo.empty
+                , lunchMoneyInfo = flags.maybeLunchMoneyInfo |> Maybe.withDefault LunchMoneyInfo.empty
                 , amountInput = "0,00"
                 , payeeInput = ""
                 , selectedCategory = ""
@@ -109,7 +109,7 @@ updateAppModel msg model =
     case msg of
         GotLunchMoneyInfoMsg m ->
             let
-                ( newLunchMoneyInfo, cmd ) =
+                ( newLunchMoneyInfo, lunchMoneyInfoCmds ) =
                     LunchMoneyInfo.update m model.lunchMoneyInfo
 
                 selectedAsset =
@@ -129,7 +129,10 @@ updateAppModel msg model =
                 | lunchMoneyInfo = newLunchMoneyInfo
                 , selectedAsset = selectedAsset
               }
-            , cmd
+            , Cmd.batch
+                [ lunchMoneyInfoCmds
+                , storeLunchMoneyInfo newLunchMoneyInfo
+                ]
             )
 
         ChangedToken newTokenRaw ->
@@ -290,6 +293,20 @@ storeInsertQueue iq =
         |> InteropPorts.fromElm
 
 
+lunchMoneyInfoKey : String
+lunchMoneyInfoKey =
+    "lunchMoneyInfo"
+
+
+storeLunchMoneyInfo : LunchMoneyInfo.Store -> Cmd Msg
+storeLunchMoneyInfo store =
+    InteropDefinitions.StoreSetting
+        { key = lunchMoneyInfoKey
+        , value = Encode.encoder (Codec.encoder LunchMoneyInfo.codecStore) store
+        }
+        |> InteropPorts.fromElm
+
+
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.batch
@@ -341,18 +358,24 @@ appView model =
                 InsertQueue.Failed error ->
                     displayUnsent [ Html.p [] [ Html.text (displayInsertQueueError error) ] ]
 
-        errorDisplay =
-            case model.error of
-                Just err ->
-                    [ Html.text ("Error: " ++ err) ]
 
-                Nothing ->
-                    []
 
         lunchMoneyInfo =
             model.lunchMoneyInfo
                 |> LunchMoneyInfo.combined
 
+        lunchMoneyError =
+            case lunchMoneyInfo of
+                RemoteData.Failure error ->
+                    [Html.text ("Error getting info: " ++ error)]
+                _ -> []
+        errorDisplay =
+            case model.error of
+                Just err ->
+                    Html.text ("Error: " ++ err) :: lunchMoneyError
+
+                Nothing ->
+                    [] ++ lunchMoneyError
         payees =
             lunchMoneyInfo
                 |> RemoteData.map LunchMoneyInfo.payees
