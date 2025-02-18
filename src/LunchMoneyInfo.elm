@@ -7,6 +7,7 @@ import RemoteData exposing (RemoteData)
 import Set
 import TsJson.Codec as Codec exposing (Codec)
 import Utils exposing (stringFromHttpError)
+import Utils.Cached as Cached exposing (Cached)
 
 
 type Store
@@ -14,9 +15,9 @@ type Store
 
 
 type alias StoreData =
-    { categories : RemoteData String (List ( String, List LunchMoney.CategoryInfo ))
-    , assets : RemoteData String (List LunchMoney.AssetInfo)
-    , transactions : RemoteData String (List LunchMoney.Transaction)
+    { categories : Cached String (List ( String, List LunchMoney.CategoryInfo ))
+    , assets : Cached String (List LunchMoney.AssetInfo)
+    , transactions : Cached String (List LunchMoney.Transaction)
     }
 
 
@@ -25,9 +26,9 @@ codecStore =
     Codec.object
         (\categories_ assets_ transcations_ ->
             Store
-                { categories = RemoteData.Success categories_
-                , assets = RemoteData.Success assets_
-                , transactions = RemoteData.Success transcations_
+                { categories = Cached.Available categories_
+                , assets = Cached.Available assets_
+                , transactions = Cached.Available transcations_
                 }
         )
         |> Codec.field "categories" (getFromStore .categories) (Codec.list (Codec.tuple Codec.string (Codec.list LunchMoney.codecCategoryInfo)))
@@ -36,16 +37,16 @@ codecStore =
         |> Codec.buildObject
 
 
-getFromStore : (StoreData -> RemoteData error (List a)) -> Store -> List a
+getFromStore : (StoreData -> Cached error (List a)) -> Store -> List a
 getFromStore getter (Store store) =
     getter store
         |> remoteGetList
 
 
-remoteGetList : RemoteData error (List a) -> List a
+remoteGetList : Cached error (List a) -> List a
 remoteGetList remote =
     remote
-        |> RemoteData.withDefault []
+        |> Cached.withDefault []
 
 
 type LunchMoneyInfo
@@ -76,9 +77,9 @@ payees (LunchMoneyInfo info) =
 empty : Store
 empty =
     Store
-        { categories = RemoteData.NotAsked
-        , assets = RemoteData.NotAsked
-        , transactions = RemoteData.NotAsked
+        { categories = Cached.Missing
+        , assets = Cached.Missing
+        , transactions = Cached.Missing
         }
 
 
@@ -116,7 +117,7 @@ update msg (Store model) =
                         result
                             |> Result.mapError stringFromHttpError
                             |> Result.map LunchMoney.groupEntries
-                            |> RemoteData.fromResult
+                            |> Cached.updateWithResult model.categories
                 }
             , Cmd.none
             )
@@ -127,7 +128,7 @@ update msg (Store model) =
                     | assets =
                         result
                             |> Result.mapError stringFromHttpError
-                            |> RemoteData.fromResult
+                            |> Cached.updateWithResult model.assets
                 }
             , Cmd.none
             )
@@ -138,15 +139,15 @@ update msg (Store model) =
                     | transactions =
                         result
                             |> Result.mapError stringFromHttpError
-                            |> RemoteData.fromResult
+                            |> Cached.updateWithResult model.transactions
                 }
             , Cmd.none
             )
 
 
-combined : Store -> RemoteData String LunchMoneyInfo
+combined : Store -> ( Maybe String, Maybe LunchMoneyInfo )
 combined (Store remote) =
-    RemoteData.map3
+    Cached.combine3
         (\categories_ assets_ transactions_ ->
             LunchMoneyInfo
                 { categories = categories_

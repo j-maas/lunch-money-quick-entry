@@ -114,7 +114,7 @@ updateAppModel msg model =
 
                 selectedAsset =
                     case newLunchMoneyInfo |> LunchMoneyInfo.combined of
-                        RemoteData.Success info ->
+                        ( _, Just info ) ->
                             case LunchMoneyInfo.activeAssets info of
                                 first :: _ ->
                                     LunchMoney.assetId first |> String.fromInt
@@ -358,38 +358,40 @@ appView model =
                 InsertQueue.Failed error ->
                     displayUnsent [ Html.p [] [ Html.text (displayInsertQueueError error) ] ]
 
-
-
-        lunchMoneyInfo =
+        ( lunchMoneyError, lunchMoneyInfo ) =
             model.lunchMoneyInfo
                 |> LunchMoneyInfo.combined
 
-        lunchMoneyError =
-            case lunchMoneyInfo of
-                RemoteData.Failure error ->
-                    [Html.text ("Error getting info: " ++ error)]
-                _ -> []
+        lunchMoneyErrorDisplay =
+            case lunchMoneyError of
+                Just error ->
+                    [ Html.text ("Error getting info: " ++ error) ]
+
+                Nothing ->
+                    []
+
         errorDisplay =
             case model.error of
                 Just err ->
-                    Html.text ("Error: " ++ err) :: lunchMoneyError
+                    Html.text ("Error: " ++ err) :: lunchMoneyErrorDisplay
 
                 Nothing ->
-                    [] ++ lunchMoneyError
+                    [] ++ lunchMoneyErrorDisplay
+
         payees =
             lunchMoneyInfo
-                |> RemoteData.map LunchMoneyInfo.payees
-                |> RemoteData.withDefault []
+                |> Maybe.map LunchMoneyInfo.payees
+                |> Maybe.withDefault []
 
         categories =
             lunchMoneyInfo
-                |> RemoteData.map LunchMoneyInfo.categories
-                |> RemoteData.withDefault []
+                |> Maybe.map LunchMoneyInfo.categories
+                |> Maybe.withDefault []
 
         assets =
             lunchMoneyInfo
-                |> RemoteData.map LunchMoneyInfo.activeAssets
-                |> RemoteData.withDefault []
+                |> Maybe.map LunchMoneyInfo.activeAssets
+                |> Maybe.withDefault []
     in
     Html.main_
         [ Attr.css
