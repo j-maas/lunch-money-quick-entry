@@ -13,7 +13,6 @@ import InteropPorts
 import Json.Decode as Decode
 import LunchMoney
 import LunchMoneyInfo
-import RemoteData
 import TsJson.Codec as Codec
 import TsJson.Encode as Encode
 
@@ -220,6 +219,10 @@ updateAppModel msg model =
                     in
                     ( { model
                         | insertQueue = newInsertQueue
+                        , amountInput = ""
+                        , payeeInput = ""
+                        , selectedCategory = ""
+                        , selectedAsset = ""
                       }
                     , insertCmds
                     )
