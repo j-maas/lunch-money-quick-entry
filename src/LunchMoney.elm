@@ -384,4 +384,4 @@ authHeader (Token token) =
 
 timeout : Maybe Float
 timeout =
-    Just 10000
+    Just 5000
