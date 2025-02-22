@@ -9,7 +9,8 @@ import Html.Styled as Html exposing (Html)
 import Html.Styled.Attributes as Attr
 import Html.Styled.Events as Events
 import InsertQueue exposing (InsertQueue)
-import InteropDefinitions
+import InteropCodecs
+import InteropFlags
 import InteropPorts
 import Json.Decode as Decode
 import LunchMoney
@@ -48,7 +49,7 @@ type alias AppModel =
 
 init : Decode.Value -> ( Model, Cmd Msg )
 init flagsRaw =
-    case InteropPorts.decodeFlags flagsRaw of
+    case InteropFlags.decodeFlags flagsRaw of
         Err flagsError ->
             ( Err <| Decode.errorToString flagsError
             , Cmd.none
@@ -290,7 +291,7 @@ tokenSettingKey =
 
 storeToken : LunchMoney.Token -> Cmd Msg
 storeToken token =
-    InteropDefinitions.StoreSetting
+    InteropCodecs.StoreSetting
         { key = tokenSettingKey
         , value =
             Encode.encoder
@@ -307,7 +308,7 @@ insertQueueKey =
 
 storeInsertQueue : InsertQueue -> Cmd Msg
 storeInsertQueue iq =
-    InteropDefinitions.StoreSetting
+    InteropCodecs.StoreSetting
         { key = insertQueueKey
         , value = Encode.encoder (Codec.encoder InsertQueue.codecInsertQueue) iq
         }
@@ -321,9 +322,9 @@ lunchMoneyInfoKey =
 
 storeAutofill : Autofill.Cache -> Cmd Msg
 storeAutofill store =
-    InteropDefinitions.StoreSetting
+    InteropCodecs.StoreSetting
         { key = lunchMoneyInfoKey
-        , value = Encode.encoder (Codec.encoder Autofill.codecStore) store
+        , value = Encode.encoder (Codec.encoder Autofill.codecCache) store
         }
         |> InteropPorts.fromElm
 

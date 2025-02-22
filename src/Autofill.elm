@@ -1,7 +1,8 @@
-module Autofill exposing (AutofillData, Cache, CacheData, Msg, activeAssets, categories, codecStore, combined, empty, fetch, payees, update)
+module Autofill exposing (AutofillData, Cache, CacheData, Msg, activeAssets, categories, codecCache, combined, empty, fetch, payees, refresh, update)
 
 import Date exposing (Date)
 import Http
+import Log
 import LunchMoney exposing (codecTransaction)
 import Set
 import Task
@@ -23,8 +24,8 @@ type alias CacheData =
     }
 
 
-codecStore : Codec Cache
-codecStore =
+codecCache : Codec Cache
+codecCache =
     Codec.object
         (\categories_ assets_ transcations_ lastUpdated_ ->
             Cache
@@ -34,15 +35,15 @@ codecStore =
                 , lastUpdated = lastUpdated_
                 }
         )
-        |> Codec.field "categories" (getFromStore .categories) (Codec.list (Codec.tuple Codec.string (Codec.list LunchMoney.codecCategoryInfo)))
-        |> Codec.field "assets" (getFromStore .assets) (Codec.list LunchMoney.codecAssetInfo)
-        |> Codec.field "transactions" (getFromStore .transactions) (Codec.list codecTransaction)
+        |> Codec.field "categories" (getFromCache .categories) (Codec.list (Codec.tuple Codec.string (Codec.list LunchMoney.codecCategoryInfo)))
+        |> Codec.field "assets" (getFromCache .assets) (Codec.list LunchMoney.codecAssetInfo)
+        |> Codec.field "transactions" (getFromCache .transactions) (Codec.list codecTransaction)
         |> Codec.maybeField "last_updated" (\(Cache cache) -> cache.lastUpdated) codecPosix
         |> Codec.buildObject
 
 
-getFromStore : (CacheData -> Cached error (List a)) -> Cache -> List a
-getFromStore getter (Cache cache) =
+getFromCache : (CacheData -> Cached error (List a)) -> Cache -> List a
+getFromCache getter (Cache cache) =
     getter cache
         |> remoteGetList
 
@@ -127,6 +128,7 @@ fetch token today toMsg =
         , LunchMoney.getAllTransactions token
             { start = start, end = end }
             (GotTransactions >> toMsg)
+        , Log.info "Fetching autofill data"
         ]
 
 

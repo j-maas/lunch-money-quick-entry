@@ -30,6 +30,25 @@ async function init() {
                 console.debug(`Stored a setting: ${fromElm.data.key} -> ${fromElm.data.value}`, fromElm.data)
                 break;
             }
+            case "log": {
+                const { level, message } = fromElm.data
+                switch (level) {
+                    case "Info": {
+                        console.log(message);
+                        break;
+                    }
+                    case "Warning": {
+                        console.warn(message);
+                        break;
+                    }
+                    case "Error": {
+                        console.error(message);
+                        break;
+                    }
+                }
+                break;
+            }
+
         }
     });
 }
