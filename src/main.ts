@@ -8,9 +8,9 @@ async function init() {
     const store = await tauriStore.load("store.json", { autoSave: true });
 
     const today = new Date().toISOString().slice(0, 10);
-    const token = await store.get<string>("token");
-    const insertQueue = await store.get<any>("insertQueue");
-    const autofillCache = await store.get<any>("autofillCache");
+    const token = await store.get<string>("token") || null;
+    const insertQueue = await store.get<any>("insertQueue") || null;
+    const autofillCache = await store.get<any>("autofillCache") || null;
     const flags: Elm.Flags = {
         today,
         token,

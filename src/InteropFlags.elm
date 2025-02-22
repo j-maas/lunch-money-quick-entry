@@ -22,9 +22,9 @@ flags : Decoder Flags
 flags =
     Decode.map4 Flags
         (Decode.field "today" (Codec.decoder Utils.codecDate))
-        (Decode.optionalField "token" tsDecodeToken)
-        (Decode.optionalField insertQueueKey (Codec.decoder InsertQueue.codecInsertQueue))
-        (Decode.optionalField autofillCacheKey (Codec.decoder Autofill.codecCache))
+        (Decode.optionalNullableField "token" tsDecodeToken)
+        (Decode.optionalNullableField insertQueueKey (Codec.decoder InsertQueue.codecInsertQueue))
+        (Decode.optionalNullableField autofillCacheKey (Codec.decoder Autofill.codecCache))
 
 
 insertQueueKey : String
