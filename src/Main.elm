@@ -398,101 +398,92 @@ appView model =
     in
     Html.main_
         [ Attr.css
-            [ Css.display Css.flex_
+            [ columnStyle 3
             , Css.alignItems Css.center
             , Css.height (Css.pct 100)
-            , Css.margin (Css.rem 1)
+            , Css.padding (Css.rem 1)
             ]
         ]
-        [ Html.form
-            [ Attr.css
-                [ Css.display Css.flex_
-                , Css.flexDirection Css.column
-                , Css.alignItems Css.stretch
-                , Css.gap (Css.rem 1)
-                ]
-            , Event.onSubmit TappedInsertTransaction
-            ]
-            ([ labeled "Access token"
-                []
-                [ textInput
-                    (case model.token of
-                        Just token ->
-                            LunchMoney.tokenToString token
-
-                        Nothing ->
-                            ""
-                    )
-                    ChangedToken
-                    [ Attr.required True ]
-                ]
-             , labeled "Date"
-                []
-                [ dateInput model.dateInput ChangedDateInput [ Attr.required True ] ]
-             , labeled "Amount"
-                []
-                [ textInput model.amountInput
-                    ChangedAmountInput
-                    [ Attr.attribute "inputmode" "numeric"
+        [ Html.div [ Attr.css [ Css.width (Css.pct 100) ] ]
+            (Html.form
+                [ Attr.css
+                    [ columnStyle 1
+                    , Css.alignItems Css.stretch
+                    , Css.width (Css.pct 100)
                     ]
+                , Events.onSubmit TappedInsertTransaction
                 ]
-             , labeled "Payee"
-                []
-                (autocompleteInput
-                    "payeeList"
-                    model.payeeInput
-                    ChangedPayeeInput
+                [ labeled "Date"
                     []
-                    payees
-                )
-             , labeled "Category"
-                []
-                [ selectInput
-                    ChangedCategoryInput
+                    [ dateInput model.dateInput ChangedDateInput [ Attr.required True ] ]
+                , labeled "Amount"
                     []
-                    (groupedOptions
-                        model.selectedCategory
-                        (( "", [ { display = "Uncategorized", key = "" } ] )
-                            :: (categories
-                                    |> List.map
-                                        (Tuple.mapSecond
-                                            (List.map
-                                                (\category ->
-                                                    { display = category.name
-                                                    , key = category.id |> String.fromInt
-                                                    }
+                    [ textInput model.amountInput
+                        ChangedAmountInput
+                        [ Attr.attribute "inputmode" "numeric"
+                        ]
+                    ]
+                , labeled "Payee"
+                    []
+                    (autocompleteInput
+                        "payeeList"
+                        model.payeeInput
+                        ChangedPayeeInput
+                        []
+                        payees
+                    )
+                , labeled "Category"
+                    []
+                    [ selectInput
+                        ChangedCategoryInput
+                        []
+                        (groupedOptions
+                            model.selectedCategory
+                            (( "", [ { display = "Uncategorized", key = "" } ] )
+                                :: (categories
+                                        |> List.map
+                                            (Tuple.mapSecond
+                                                (List.map
+                                                    (\category ->
+                                                        { display = category.name
+                                                        , key = category.id |> String.fromInt
+                                                        }
+                                                    )
                                                 )
                                             )
-                                        )
-                               )
+                                   )
+                            )
                         )
-                    )
-                ]
-             , labeled "Account"
-                []
-                [ selectInput
-                    ChangedAssetInput
+                    ]
+                , labeled "Account"
                     []
-                    (flatOptions model.selectedAsset
-                        (assets
-                            |> List.map
-                                (\asset ->
-                                    { display = LunchMoney.assetName asset
-                                    , key = LunchMoney.assetId asset |> String.fromInt
-                                    }
-                                )
+                    [ selectInput
+                        ChangedAssetInput
+                        []
+                        (flatOptions model.selectedAsset
+                            (assets
+                                |> List.map
+                                    (\asset ->
+                                        { display = LunchMoney.assetName asset
+                                        , key = LunchMoney.assetId asset |> String.fromInt
+                                        }
+                                    )
+                            )
                         )
-                    )
+                    ]
+                , Html.button
+                    [ Attr.type_ "submit"
+                    , Attr.css [ Css.alignSelf Css.start ]
+                    ]
+                    [ Html.text "Insert" ]
                 ]
-             , Html.button
-                [ Attr.type_ "submit"
-                , Attr.css [ Css.alignSelf Css.start ]
-                ]
-                [ Html.text "Insert" ]
-             ]
-                ++ insertionIndicator
+                :: insertionIndicator
                 ++ errorDisplay
             )
+        , Html.div []
+            [ autofillView model.autofill
+            , settingsView model.token []
+            ]
         ]
 
 
@@ -618,3 +609,28 @@ displayInsertQueueError error =
 
         InsertQueue.UnknownError err ->
             "Something went wrong: " ++ err
+
+
+settingsView : Maybe LunchMoney.Token -> List Css.Style -> Html Msg
+settingsView maybeToken styles =
+    Html.details [ Attr.css styles ]
+        [ Html.summary
+            [ Attr.css
+                [ Css.marginBottom (Css.rem 1)
+                ]
+            ]
+            [ Html.text "Settings" ]
+        , labeled "Access token"
+            []
+            [ textInput
+                (case maybeToken of
+                    Just token ->
+                        LunchMoney.tokenToString token
+
+                    Nothing ->
+                        ""
+                )
+                ChangedToken
+                [ Attr.required True ]
+            ]
+        ]

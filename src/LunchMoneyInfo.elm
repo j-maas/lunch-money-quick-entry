@@ -3,7 +3,6 @@ module LunchMoneyInfo exposing (LunchMoneyInfo, Msg, Store, StoreData, activeAss
 import Date exposing (Date)
 import Http
 import LunchMoney exposing (codecTransaction)
-import RemoteData exposing (RemoteData)
 import Set
 import TsJson.Codec as Codec exposing (Codec)
 import Utils exposing (stringFromHttpError)
