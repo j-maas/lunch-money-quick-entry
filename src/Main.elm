@@ -531,7 +531,7 @@ appView model =
                 :: insertionIndicator
                 ++ errorDisplay
             )
-        , Html.div []
+        , Html.div [ Attr.css [ Css.width (Css.pct 100) ] ]
             [ autofillView model.autofill
             , settingsView model.token []
             ]
@@ -693,7 +693,13 @@ autofillView cache =
                 Nothing ->
                     "No autofill data available."
     in
-    Html.p []
+    Html.p
+        [ Attr.css
+            [ Css.display Css.flex_
+            , Css.flexWrap Css.wrap
+            , Css.gap (Css.rem 0.5)
+            ]
+        ]
         [ Html.text displayLastUpdated
         , Html.button
             [ Events.onClick TappedSyncAutofill
