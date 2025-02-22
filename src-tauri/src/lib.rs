@@ -18,8 +18,8 @@ pub fn run() {
                 let window = app.get_webview_window("main").unwrap();
                 window
                     .set_size(Size::Logical(LogicalSize {
-                        width: 300.0,
-                        height: 500.0,
+                        width: 400.0,
+                        height: 800.0,
                     }))
                     .unwrap();
             }
