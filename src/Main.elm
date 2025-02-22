@@ -219,6 +219,7 @@ updateAppModel msg model =
                                     Just model.payeeInput
                             , categoryId = maybeCategoryId
                             , assetId = maybeAssetId
+                            , status = Just LunchMoney.Cleared
                             }
 
                         ( newInsertQueue, insertCmds ) =

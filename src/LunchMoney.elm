@@ -1,4 +1,4 @@
-module LunchMoney exposing (AllAssetsResponse, AllCategoriesResponse, AllTransactionsResponse, Amount, AssetInfo, CategoryEntry(..), CategoryInfo, InsertResponse, Token, Transaction, amountFromCents, amountToString, assetId, assetIsActive, assetName, codecAmount, codecAssetInfo, codecCategoryInfo, codecTransaction, flattenEntries, getAllAssets, getAllCategories, getAllTransactions, groupEntries, insertTransactions, tokenFromString, tokenToString)
+module LunchMoney exposing (AllAssetsResponse, AllCategoriesResponse, AllTransactionsResponse, Amount, AssetInfo, CategoryEntry(..), CategoryInfo, InsertResponse, Status(..), Token, Transaction, amountFromCents, amountToString, assetId, assetIsActive, assetName, codecAmount, codecAssetInfo, codecCategoryInfo, codecTransaction, flattenEntries, getAllAssets, getAllCategories, getAllTransactions, groupEntries, insertTransactions, tokenFromString, tokenToString)
 
 import Date exposing (Date)
 import Http
@@ -57,7 +57,13 @@ type alias Transaction =
     , payee : Maybe String
     , categoryId : Maybe Int
     , assetId : Maybe Int
+    , status : Maybe Status
     }
+
+
+type Status
+    = Cleared
+    | Uncleared
 
 
 codecTransaction : Codec Transaction
@@ -77,6 +83,7 @@ codecTransaction =
             Codec.string
         |> Codec.maybeField "category_id" .categoryId Codec.int
         |> Codec.maybeField "asset_id" .assetId Codec.int
+        |> Codec.maybeField "status" .status codecStatus
         |> Codec.buildObject
 
 
@@ -106,6 +113,22 @@ codecAmount =
                     )
                 )
         )
+
+
+codecStatus : Codec Status
+codecStatus =
+    Codec.custom (Just "status")
+        (\cleared uncleared status ->
+            case status of
+                Cleared ->
+                    cleared
+
+                Uncleared ->
+                    uncleared
+        )
+        |> Codec.variant0 "cleared" Cleared
+        |> Codec.variant0 "uncleared" Uncleared
+        |> Codec.buildCustom
 
 
 insertTransactions : Token -> List Transaction -> (Result Http.Error InsertResponse -> msg) -> Cmd msg
