@@ -532,7 +532,7 @@ appView model =
                 ++ errorDisplay
             )
         , Html.div [ Attr.css [ Css.width (Css.pct 100) ] ]
-            [ autofillView model.autofill
+            [ autofillView model.today model.autofill
             , settingsView model.token []
             ]
         ]
@@ -671,8 +671,8 @@ displayInsertQueueError error =
             "Something went wrong: " ++ err
 
 
-autofillView : Autofill.Cache -> Html Msg
-autofillView cache =
+autofillView : Date -> Autofill.Cache -> Html Msg
+autofillView today cache =
     let
         ( _, maybeData ) =
             Autofill.combined cache
@@ -685,10 +685,27 @@ autofillView cache =
                             |> Date.fromPosix Time.utc
                     )
 
+        diffDisplay lastUpdated =
+            let
+                daysDiff =
+                    Date.diff Date.Days lastUpdated today
+            in
+            if daysDiff == 0 then
+                "Synced today."
+
+            else if daysDiff == 1 then
+                "Synced yesterday."
+
+            else if daysDiff < 7 then
+                "Synced " ++ String.fromInt daysDiff ++ " days ago."
+
+            else
+                "Last sync was more than a week ago."
+
         displayLastUpdated =
             case maybeLastUpdated of
                 Just lastUpdated ->
-                    "Last synced on " ++ Date.toIsoString lastUpdated
+                    diffDisplay lastUpdated
 
                 Nothing ->
                     "No autofill data available."
