@@ -119,6 +119,19 @@ codecAmount =
                                     _ ->
                                         Decode.fail ("Expected a number with single decimal point, got " ++ raw)
 
+                            [ _ ] ->
+                                case String.toInt raw of
+                                    Just before ->
+                                        let
+                                            cents =
+                                                before * 100
+                                        in
+                                        amountFromCents cents
+                                            |> Decode.succeed
+
+                                    Nothing ->
+                                        Decode.fail ("Expected exactly one decimal point, but got '" ++ raw ++ "'")
+
                             _ ->
                                 Decode.fail ("Expected exactly one decimal point, but got '" ++ raw ++ "'")
                     )

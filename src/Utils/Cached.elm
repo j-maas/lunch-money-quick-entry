@@ -1,5 +1,7 @@
 module Utils.Cached exposing (Cached(..), combine3, toMaybe, updateWithResult, withDefault)
 
+import Maybe.Extra as Maybe
+
 
 type Cached e a
     = Missing
@@ -101,7 +103,7 @@ combine3 mapping first second third =
 
         maybeError =
             getError first
-                |> Maybe.andThen (\_ -> getError second)
-                |> Maybe.andThen (\_ -> getError third)
+                |> Maybe.orElse (getError second)
+                |> Maybe.orElse (getError third)
     in
     ( maybeError, maybeValue )

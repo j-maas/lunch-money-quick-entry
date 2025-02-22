@@ -24,7 +24,7 @@ stringFromHttpError error =
             "The server responded with a bad status of " ++ String.fromInt status ++ "."
 
         Http.BadBody bodyError ->
-            "I sent a malformed body: " ++ bodyError
+            "I got a malformed body: " ++ bodyError
 
 
 codecDate : Codec Date
