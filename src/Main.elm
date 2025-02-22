@@ -42,6 +42,7 @@ type alias AppModel =
     , selectedCategory : String
     , selectedAsset : String
     , amountInput : String
+    , inflowInput : Bool
     , insertQueue : InsertQueue
     , error : Maybe String
     }
@@ -74,6 +75,7 @@ init flagsRaw =
                 , dateInput = flags.today |> Date.toIsoString
                 , autofill = autofill
                 , amountInput = "0,00"
+                , inflowInput = False
                 , payeeInput = ""
                 , selectedCategory = ""
                 , selectedAsset = ""
@@ -91,6 +93,7 @@ type Msg
     | ChangedToken String
     | ChangedDateInput String
     | ChangedAmountInput String
+    | ChangedInflowInput Bool
     | ChangedPayeeInput String
     | ChangedCategoryInput String
     | ChangedAssetInput String
@@ -181,6 +184,9 @@ updateAppModel msg model =
             in
             ( { model | amountInput = formattedNewAmount }, Cmd.none )
 
+        ChangedInflowInput newInflow ->
+            ( { model | inflowInput = newInflow }, Cmd.none )
+
         ChangedPayeeInput newPayee ->
             ( { model | payeeInput = newPayee }, Cmd.none )
 
@@ -207,11 +213,20 @@ updateAppModel msg model =
                         maybeAssetId =
                             String.toInt model.selectedAsset
 
+                        inflowFactor =
+                            if model.inflowInput then
+                                -1
+
+                            else
+                                1
+
+                        cents =
+                            cleanAmountInput model.amountInput * inflowFactor
+
                         transaction =
                             { date = date
                             , amount =
-                                cleanAmountInput model.amountInput
-                                    |> LunchMoney.amountFromCents
+                                LunchMoney.amountFromCents cents
                             , payee =
                                 if String.isEmpty model.payeeInput then
                                     Nothing
@@ -433,6 +448,30 @@ appView model =
                     [ textInput model.amountInput
                         ChangedAmountInput
                         [ Attr.attribute "inputmode" "numeric"
+                        ]
+                    ]
+                , Html.div [ Attr.css [ Css.display Css.flex_, Css.flexDirection Css.row, Css.gap (Css.rem 1) ] ]
+                    [ Html.label []
+                        [ Html.input
+                            [ Attr.type_ "radio"
+                            , Attr.name "inflow"
+                            , Attr.value "outflow"
+                            , Attr.checked (not model.inflowInput)
+                            , Events.onInput (\_ -> ChangedInflowInput False)
+                            ]
+                            []
+                        , Html.text "Outflow"
+                        ]
+                    , Html.label []
+                        [ Html.input
+                            [ Attr.type_ "radio"
+                            , Attr.name "inflow"
+                            , Attr.value "inflow"
+                            , Attr.checked model.inflowInput
+                            , Events.onInput (\_ -> ChangedInflowInput True)
+                            ]
+                            []
+                        , Html.text "Inflow"
                         ]
                     ]
                 , labeled "Payee"
