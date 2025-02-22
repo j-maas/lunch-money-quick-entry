@@ -1,7 +1,8 @@
-module Utils exposing (codecDate, stringFromHttpError)
+module Utils exposing (codecDate, codecPosix, stringFromHttpError)
 
 import Date exposing (Date)
 import Http
+import Time
 import TsJson.Codec as Codec exposing (Codec)
 import TsJson.Decode as Decode
 import TsJson.Encode as Encode
@@ -45,3 +46,9 @@ codecDate =
                     )
                 )
         )
+
+
+codecPosix : Codec Time.Posix
+codecPosix =
+    Codec.int
+        |> Codec.map Time.millisToPosix Time.posixToMillis

@@ -1,18 +1,19 @@
 module Main exposing (main)
 
+import Autofill
 import Browser
 import Char exposing (isDigit)
 import Css
-import Date
+import Date exposing (Date)
 import Html.Styled as Html exposing (Html)
 import Html.Styled.Attributes as Attr
-import Html.Styled.Events as Event
+import Html.Styled.Events as Events
 import InsertQueue exposing (InsertQueue)
 import InteropDefinitions
 import InteropPorts
 import Json.Decode as Decode
 import LunchMoney
-import LunchMoneyInfo
+import Time
 import TsJson.Codec as Codec
 import TsJson.Encode as Encode
 
@@ -33,8 +34,9 @@ type alias Model =
 
 type alias AppModel =
     { token : Maybe LunchMoney.Token
+    , today : Date
     , dateInput : String
-    , lunchMoneyInfo : LunchMoneyInfo.Store
+    , autofill : Autofill.Cache
     , payeeInput : String
     , selectedCategory : String
     , selectedAsset : String
@@ -54,18 +56,22 @@ init flagsRaw =
 
         Ok flags ->
             let
-                ( maybeError, maybeLunchMoneyInfoCmd ) =
-                    case ( flags.maybeToken, Date.fromIsoString flags.today ) of
-                        ( Just token, Ok today ) ->
-                            ( Nothing, LunchMoneyInfo.fetch token today GotLunchMoneyInfoMsg )
+                autofill =
+                    flags.maybeAutofillData |> Maybe.withDefault Autofill.empty
+
+                ( maybeError, maybeAutofillCmd ) =
+                    case flags.maybeToken of
+                        Just token ->
+                            ( Nothing, Autofill.refresh token flags.today GotAutofillMsg autofill )
 
                         _ ->
                             ( Just "No token given at startup or invalid date, not getting updates.", Cmd.none )
             in
             ( Ok
                 { token = flags.maybeToken
-                , dateInput = flags.today
-                , lunchMoneyInfo = flags.maybeLunchMoneyInfo |> Maybe.withDefault LunchMoneyInfo.empty
+                , today = flags.today
+                , dateInput = flags.today |> Date.toIsoString
+                , autofill = autofill
                 , amountInput = "0,00"
                 , payeeInput = ""
                 , selectedCategory = ""
@@ -75,12 +81,12 @@ init flagsRaw =
                         |> Maybe.withDefault InsertQueue.empty
                 , error = maybeError
                 }
-            , maybeLunchMoneyInfoCmd
+            , maybeAutofillCmd
             )
 
 
 type Msg
-    = GotLunchMoneyInfoMsg LunchMoneyInfo.Msg
+    = GotAutofillMsg Autofill.Msg
     | ChangedToken String
     | ChangedDateInput String
     | ChangedAmountInput String
@@ -89,6 +95,7 @@ type Msg
     | ChangedAssetInput String
     | TappedInsertTransaction
     | TappedProcessQueue
+    | TappedSyncAutofill
     | GotInsertQueueMsg InsertQueue.Msg
 
 
@@ -106,15 +113,15 @@ update msg model =
 updateAppModel : Msg -> AppModel -> ( AppModel, Cmd Msg )
 updateAppModel msg model =
     case msg of
-        GotLunchMoneyInfoMsg m ->
+        GotAutofillMsg m ->
             let
-                ( newLunchMoneyInfo, lunchMoneyInfoCmds ) =
-                    LunchMoneyInfo.update m model.lunchMoneyInfo
+                ( newAutofillData, autofillCmds ) =
+                    Autofill.update m GotAutofillMsg model.autofill
 
                 selectedAsset =
-                    case newLunchMoneyInfo |> LunchMoneyInfo.combined of
-                        ( _, Just info ) ->
-                            case LunchMoneyInfo.activeAssets info of
+                    case newAutofillData |> Autofill.combined of
+                        ( _, Just data ) ->
+                            case Autofill.activeAssets data.info of
                                 first :: _ ->
                                     LunchMoney.assetId first |> String.fromInt
 
@@ -125,12 +132,12 @@ updateAppModel msg model =
                             ""
             in
             ( { model
-                | lunchMoneyInfo = newLunchMoneyInfo
+                | autofill = newAutofillData
                 , selectedAsset = selectedAsset
               }
             , Cmd.batch
-                [ lunchMoneyInfoCmds
-                , storeLunchMoneyInfo newLunchMoneyInfo
+                [ autofillCmds
+                , storeAutofill newAutofillData
                 ]
             )
 
@@ -248,6 +255,16 @@ updateAppModel msg model =
                 _ ->
                     ( model, Cmd.none )
 
+        TappedSyncAutofill ->
+            case model.token of
+                Just token ->
+                    ( model
+                    , Autofill.fetch token model.today GotAutofillMsg
+                    )
+
+                _ ->
+                    ( model, Cmd.none )
+
         GotInsertQueueMsg m ->
             let
                 newInsertQueue =
@@ -301,11 +318,11 @@ lunchMoneyInfoKey =
     "lunchMoneyInfo"
 
 
-storeLunchMoneyInfo : LunchMoneyInfo.Store -> Cmd Msg
-storeLunchMoneyInfo store =
+storeAutofill : Autofill.Cache -> Cmd Msg
+storeAutofill store =
     InteropDefinitions.StoreSetting
         { key = lunchMoneyInfoKey
-        , value = Encode.encoder (Codec.encoder LunchMoneyInfo.codecStore) store
+        , value = Encode.encoder (Codec.encoder Autofill.codecStore) store
         }
         |> InteropPorts.fromElm
 
@@ -340,7 +357,7 @@ appView model =
                         ]
                         :: error
                         ++ [ Html.button
-                                [ Event.onClick TappedProcessQueue
+                                [ Events.onClick TappedProcessQueue
                                 , Attr.type_ "button"
                                 ]
                                 [ Html.text "Try again" ]
@@ -361,12 +378,12 @@ appView model =
                 InsertQueue.Failed error ->
                     displayUnsent [ Html.p [] [ Html.text (displayInsertQueueError error) ] ]
 
-        ( lunchMoneyError, lunchMoneyInfo ) =
-            model.lunchMoneyInfo
-                |> LunchMoneyInfo.combined
+        ( autofillError, autofillData ) =
+            model.autofill
+                |> Autofill.combined
 
         lunchMoneyErrorDisplay =
-            case lunchMoneyError of
+            case autofillError of
                 Just error ->
                     [ Html.text ("Error getting info: " ++ error) ]
 
@@ -382,18 +399,21 @@ appView model =
                     [] ++ lunchMoneyErrorDisplay
 
         payees =
-            lunchMoneyInfo
-                |> Maybe.map LunchMoneyInfo.payees
+            autofillData
+                |> Maybe.map .info
+                |> Maybe.map Autofill.payees
                 |> Maybe.withDefault []
 
         categories =
-            lunchMoneyInfo
-                |> Maybe.map LunchMoneyInfo.categories
+            autofillData
+                |> Maybe.map .info
+                |> Maybe.map Autofill.categories
                 |> Maybe.withDefault []
 
         assets =
-            lunchMoneyInfo
-                |> Maybe.map LunchMoneyInfo.activeAssets
+            autofillData
+                |> Maybe.map .info
+                |> Maybe.map Autofill.activeAssets
                 |> Maybe.withDefault []
     in
     Html.main_
@@ -487,12 +507,21 @@ appView model =
         ]
 
 
+columnStyle : Float -> Css.Style
+columnStyle gap =
+    Css.batch
+        [ Css.display Css.flex_
+        , Css.flexDirection Css.column
+        , Css.gap (Css.rem gap)
+        ]
+
+
 textInput : String -> (String -> msg) -> List (Html.Attribute msg) -> Html msg
 textInput value toMsg attributes =
     Html.input
         ([ Attr.type_ "text"
          , Attr.value value
-         , Event.onInput toMsg
+         , Events.onInput toMsg
          ]
             ++ attributes
         )
@@ -504,7 +533,7 @@ dateInput value toMsg attributes =
     Html.input
         ([ Attr.type_ "date"
          , Attr.value value
-         , Event.onInput toMsg
+         , Events.onInput toMsg
          ]
             ++ attributes
         )
@@ -513,7 +542,7 @@ dateInput value toMsg attributes =
 
 autocompleteInput : String -> String -> (String -> msg) -> List (Html.Attribute msg) -> List String -> List (Html msg)
 autocompleteInput listId current toMsg attributes options =
-    [ textInput current toMsg ([ Attr.list listId, Event.onInput toMsg ] ++ attributes)
+    [ textInput current toMsg ([ Attr.list listId, Events.onInput toMsg ] ++ attributes)
     , Html.datalist [ Attr.id listId ]
         (options
             |> List.map
@@ -526,7 +555,7 @@ autocompleteInput listId current toMsg attributes options =
 
 selectInput : (String -> msg) -> List (Html.Attribute msg) -> List (Html msg) -> Html msg
 selectInput toMsg attributes options =
-    Html.select (Event.onInput toMsg :: attributes)
+    Html.select (Events.onInput toMsg :: attributes)
         options
 
 
@@ -609,6 +638,37 @@ displayInsertQueueError error =
 
         InsertQueue.UnknownError err ->
             "Something went wrong: " ++ err
+
+
+autofillView : Autofill.Cache -> Html Msg
+autofillView cache =
+    let
+        ( _, maybeData ) =
+            Autofill.combined cache
+
+        maybeLastUpdated =
+            maybeData
+                |> Maybe.map
+                    (\data ->
+                        data.lastUpdated
+                            |> Date.fromPosix Time.utc
+                    )
+
+        displayLastUpdated =
+            case maybeLastUpdated of
+                Just lastUpdated ->
+                    "Last synced on " ++ Date.toIsoString lastUpdated
+
+                Nothing ->
+                    "No autofill data available."
+    in
+    Html.p []
+        [ Html.text displayLastUpdated
+        , Html.button
+            [ Events.onClick TappedSyncAutofill
+            ]
+            [ Html.text "Sync now" ]
+        ]
 
 
 settingsView : Maybe LunchMoney.Token -> List Css.Style -> Html Msg

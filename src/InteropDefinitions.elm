@@ -1,12 +1,14 @@
 module InteropDefinitions exposing (Flags, FromElm(..), ToElm(..), interop)
 
+import Autofill
+import Date exposing (Date)
 import InsertQueue exposing (InsertQueue)
 import Json.Encode exposing (Value)
 import LunchMoney
-import LunchMoneyInfo
 import TsJson.Codec as Codec exposing (Codec)
 import TsJson.Decode as TsDecode exposing (Decoder)
 import TsJson.Encode as TsEncode exposing (Encoder)
+import Utils exposing (codecDate)
 
 
 interop :
@@ -22,20 +24,20 @@ interop =
 
 
 type alias Flags =
-    { today : String
+    { today : Date
     , maybeToken : Maybe LunchMoney.Token
     , maybeInsertQueue : Maybe InsertQueue
-    , maybeLunchMoneyInfo : Maybe LunchMoneyInfo.Store
+    , maybeAutofillData : Maybe Autofill.Cache
     }
 
 
 flags : Decoder Flags
 flags =
     TsDecode.map4 Flags
-        (TsDecode.field "today" TsDecode.string)
+        (TsDecode.field "today" (Codec.decoder codecDate))
         (TsDecode.maybe (TsDecode.field "token" tsDecodeToken))
         (TsDecode.maybe (TsDecode.field "insertQueue" (Codec.decoder InsertQueue.codecInsertQueue)))
-        (TsDecode.maybe (TsDecode.field "lunchMoneyInfo" (Codec.decoder LunchMoneyInfo.codecStore)))
+        (TsDecode.maybe (TsDecode.field "lunchMoneyInfo" (Codec.decoder Autofill.codecStore)))
 
 
 tsDecodeToken : Decoder LunchMoney.Token
