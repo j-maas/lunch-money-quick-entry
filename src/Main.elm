@@ -301,29 +301,19 @@ storeToken token =
         |> InteropPorts.fromElm
 
 
-insertQueueKey : String
-insertQueueKey =
-    "insertQueue"
-
-
 storeInsertQueue : InsertQueue -> Cmd Msg
 storeInsertQueue iq =
     InteropCodecs.StoreSetting
-        { key = insertQueueKey
+        { key = InteropFlags.insertQueueKey
         , value = Encode.encoder (Codec.encoder InsertQueue.codecInsertQueue) iq
         }
         |> InteropPorts.fromElm
 
 
-lunchMoneyInfoKey : String
-lunchMoneyInfoKey =
-    "lunchMoneyInfo"
-
-
 storeAutofill : Autofill.Cache -> Cmd Msg
 storeAutofill store =
     InteropCodecs.StoreSetting
-        { key = lunchMoneyInfoKey
+        { key = InteropFlags.autofillCacheKey
         , value = Encode.encoder (Codec.encoder Autofill.codecCache) store
         }
         |> InteropPorts.fromElm

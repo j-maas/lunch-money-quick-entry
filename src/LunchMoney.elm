@@ -89,12 +89,23 @@ codecTransaction =
 
 codecAmount : Codec Amount
 codecAmount =
-    Codec.build (Encode.string |> Encode.map amountToString)
+    Codec.build
+        (Encode.string |> Encode.map amountToString)
         (Decode.string
             |> Decode.andThen
                 (Decode.andThenInit
                     (\raw ->
                         case String.split "." raw of
+                            -- We may receive ".01" as an amount.
+                            [ "", rawAfter ] ->
+                                case String.toInt rawAfter of
+                                    Just after ->
+                                        amountFromCents after
+                                            |> Decode.succeed
+
+                                    _ ->
+                                        Decode.fail ("Expected a number with single decimal point, got " ++ raw)
+
                             [ rawBefore, rawAfter ] ->
                                 case ( String.toInt rawBefore, String.toInt rawAfter ) of
                                     ( Just before, Just after ) ->
@@ -106,7 +117,7 @@ codecAmount =
                                             |> Decode.succeed
 
                                     _ ->
-                                        Decode.fail ("Expected integers, got " ++ rawBefore ++ "." ++ rawAfter)
+                                        Decode.fail ("Expected a number with single decimal point, got " ++ raw)
 
                             _ ->
                                 Decode.fail ("Expected exactly one decimal point, but got '" ++ raw ++ "'")

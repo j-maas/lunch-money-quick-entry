@@ -9,16 +9,16 @@ async function init() {
 
     const today = new Date().toISOString().slice(0, 10);
     const token = await store.get<string>("token");
-    const insertQueue = await store.get<string>("insertQueue");
-    const lunchMoneyInfo = await store.get<string>("lunchMoneyInfo");
+    const insertQueue = await store.get<any>("insertQueue");
+    const autofillCache = await store.get<any>("autofillCache");
     const flags: Elm.Flags = {
         today,
         token,
         insertQueue,
-        lunchMoneyInfo,
+        autofillCache,
     };
 
-    console.debug("Initializing Elm with flags: ", flags)
+    console.log("Initializing Elm with flags: ", flags)
 
     const node = document.getElementById("elm");
     const app = Elm.Main.init({ node, flags });
@@ -43,6 +43,10 @@ async function init() {
                     }
                     case "Error": {
                         console.error(message);
+                        break;
+                    }
+                    case "Debug": {
+                        console.debug(message);
                         break;
                     }
                 }
