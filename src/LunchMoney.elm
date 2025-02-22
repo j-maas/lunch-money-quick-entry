@@ -128,18 +128,10 @@ codecAmount =
 
 codecStatus : Codec Status
 codecStatus =
-    Codec.custom (Just "status")
-        (\cleared uncleared status ->
-            case status of
-                Cleared ->
-                    cleared
-
-                Uncleared ->
-                    uncleared
-        )
-        |> Codec.variant0 "cleared" Cleared
-        |> Codec.variant0 "uncleared" Uncleared
-        |> Codec.buildCustom
+    Codec.stringUnion
+        [ ( "cleared", Cleared )
+        , ( "uncleared", Uncleared )
+        ]
 
 
 insertTransactions : Token -> List Transaction -> (Result Http.Error InsertResponse -> msg) -> Cmd msg
