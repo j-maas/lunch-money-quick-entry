@@ -42,6 +42,7 @@ type alias AppModel =
     , selectedCategory : String
     , selectedAsset : String
     , amountInput : String
+    , notesInput : String
     , inflowInput : Bool
     , insertQueue : InsertQueue
     , error : Maybe String
@@ -77,6 +78,7 @@ init flagsRaw =
                 , amountInput = "0,00"
                 , inflowInput = False
                 , payeeInput = ""
+                , notesInput = ""
                 , selectedCategory = ""
                 , selectedAsset = ""
                 , insertQueue =
@@ -96,6 +98,7 @@ type Msg
     | ChangedInflowInput Bool
     | ChangedPayeeInput String
     | ChangedCategoryInput String
+    | ChangedNotesInput String
     | ChangedAssetInput String
     | TappedInsertTransaction
     | TappedProcessQueue
@@ -193,6 +196,9 @@ updateAppModel msg model =
         ChangedCategoryInput newCategory ->
             ( { model | selectedCategory = newCategory }, Cmd.none )
 
+        ChangedNotesInput newNotes ->
+            ( { model | notesInput = newNotes }, Cmd.none )
+
         ChangedAssetInput newAssetId ->
             ( { model | selectedAsset = newAssetId }, Cmd.none )
 
@@ -234,6 +240,12 @@ updateAppModel msg model =
                                 else
                                     Just model.payeeInput
                             , categoryId = maybeCategoryId
+                            , notes =
+                                if String.isEmpty model.notesInput then
+                                    Nothing
+
+                                else
+                                    Just model.notesInput
                             , assetId = maybeAssetId
                             , status = Just LunchMoney.Cleared
                             }
@@ -521,6 +533,12 @@ appView model =
                                     )
                             )
                         )
+                    ]
+                , labeled "Notes"
+                    []
+                    [ textInput model.notesInput
+                        ChangedNotesInput
+                        []
                     ]
                 , Html.button
                     [ Attr.type_ "submit"

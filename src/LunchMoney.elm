@@ -56,6 +56,7 @@ type alias Transaction =
     , amount : Amount
     , payee : Maybe String
     , categoryId : Maybe Int
+    , notes : Maybe String
     , assetId : Maybe Int
     , status : Maybe Status
     }
@@ -82,6 +83,7 @@ codecTransaction =
             )
             Codec.string
         |> Codec.maybeField "category_id" .categoryId Codec.int
+        |> Codec.maybeField "notes" .notes Codec.string
         |> Codec.maybeField "asset_id" .assetId Codec.int
         |> Codec.maybeField "status" .status codecStatus
         |> Codec.buildObject
