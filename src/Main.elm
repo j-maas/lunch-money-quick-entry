@@ -11,6 +11,7 @@ import Forms.Form as Form exposing (Form)
 import Forms.Update as Update
 import Forms.Validation as Val
 import Forms.Validation.Result as FormResult
+import Forms.Value
 import Html.Styled as Html exposing (Html)
 import Html.Styled.Attributes as Attr
 import Html.Styled.Events as Events
@@ -51,34 +52,43 @@ type alias AppModel =
     , notesInput : String
     , inflowInput : Bool
     , inputForm : InputForm
+    , settingsForm : SettingsForm
     , insertQueue : InsertQueue
     , error : Maybe String
     }
 
 
 type alias InputForm =
-    Form String FormError FormResult
+    Form String FormError InputFormResult
 
 
 inputFormFields : { date : Date } -> Fields String
-inputFormFields defaults =
+inputFormFields default =
     Field.fields
-        [ ( "date", Field.inputWithDefault (Date.toIsoString defaults.date) )
+        [ ( "date", Field.inputWithDefault (Date.toIsoString default.date) )
+        , ( "amount", Field.inputWithDefault "0,00" )
+        , ( "amountDirection", Field.inputWithDefault "outflow" )
+        , ( "payee", Field.input )
+        , ( "categoryId", Field.input )
+        , ( "assetId", Field.input )
+        , ( "notes", Field.input )
         ]
 
 
-type alias FormResult =
-    { date : Date }
+type alias InputFormResult =
+    LunchMoney.Transaction
 
 
 type FormError
     = IsEmpty
+    | NotInt
     | InvalidDate String
+    | InvalidToken
 
 
-inputFormValidate : Val.Validate String FormError FormResult
+inputFormValidate : Val.Validate String FormError InputFormResult
 inputFormValidate fields =
-    Val.valid FormResult
+    Val.valid LunchMoney.Transaction
         |> Val.required fields
             "date"
             (Val.stringField <|
@@ -90,6 +100,72 @@ inputFormValidate fields =
 
                             Err err ->
                                 Val.failure (InvalidDate err)
+            )
+        |> Val.twoFields fields
+            "amount"
+            "amountDirection"
+            (\amountValue amountDirectionValue ->
+                let
+                    amountRaw =
+                        Forms.Value.getString amountValue |> Maybe.withDefault ""
+
+                    amountDirectionRaw =
+                        Forms.Value.getString amountDirectionValue
+                            |> Maybe.withDefault ""
+
+                    amountDirection =
+                        if amountDirectionRaw == "outflow" then
+                            1
+
+                        else
+                            -1
+
+                    cents =
+                        cleanAmountInput amountRaw * amountDirection
+                in
+                LunchMoney.amountFromCents cents
+                    |> Val.success
+            )
+        |> Val.optionalWithMaybe fields "payee" Val.success
+        |> Val.optionalWithMaybe fields "categoryId" (Val.int NotInt <| Val.success)
+        |> Val.optionalWithMaybe fields "notes" Val.success
+        |> Val.optionalWithMaybe fields "assetId" (Val.int NotInt <| Val.success)
+        |> Val.hardcoded (Just LunchMoney.Cleared)
+
+
+type alias SettingsForm =
+    Form String FormError SettingsFormResult
+
+
+settingsFormFields : SettingsFormResult -> Fields String
+settingsFormFields default =
+    Field.fields
+        [ ( "token"
+          , Field.inputWithDefault
+                (default.token
+                    |> Maybe.map LunchMoney.tokenToString
+                    |> Maybe.withDefault ""
+                )
+          )
+        ]
+
+
+type alias SettingsFormResult =
+    { token : Maybe LunchMoney.Token }
+
+
+settingsFormValidate : Val.Validate String FormError SettingsFormResult
+settingsFormValidate fields =
+    Val.valid SettingsFormResult
+        |> Val.optionalWithMaybe fields
+            "token"
+            (\raw ->
+                case LunchMoney.tokenFromString raw of
+                    Just token ->
+                        Val.success token
+
+                    Nothing ->
+                        Val.failure InvalidToken
             )
 
 
@@ -116,6 +192,9 @@ init flagsRaw =
 
                 inputFields =
                     inputFormFields { date = flags.today }
+
+                settingsFields =
+                    settingsFormFields { token = flags.maybeToken }
             in
             ( Ok
                 { token = flags.maybeToken
@@ -129,6 +208,7 @@ init flagsRaw =
                 , selectedCategory = ""
                 , selectedAsset = ""
                 , inputForm = Form.form inputFields inputFormValidate
+                , settingsForm = Form.form settingsFields settingsFormValidate
                 , insertQueue =
                     flags.maybeInsertQueue
                         |> Maybe.withDefault InsertQueue.empty
@@ -140,18 +220,12 @@ init flagsRaw =
 
 type Msg
     = GotAutofillMsg Autofill.Msg
-    | ChangedToken String
-    | ChangedAmountInput String
-    | ChangedInflowInput Bool
-    | ChangedPayeeInput String
-    | ChangedCategoryInput String
-    | ChangedNotesInput String
-    | ChangedAssetInput String
     | TappedInsertTransaction
     | TappedProcessQueue
     | TappedSyncAutofill
     | GotInsertQueueMsg InsertQueue.Msg
     | InputFormChanged (Update.Msg String)
+    | SettingsFormChanged (Update.Msg String)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -196,114 +270,23 @@ updateAppModel msg model =
                 ]
             )
 
-        ChangedToken newTokenRaw ->
-            let
-                newToken =
-                    LunchMoney.tokenFromString newTokenRaw
-
-                maybeStoreToken =
-                    case newToken of
-                        Just token ->
-                            storeToken token
-
-                        Nothing ->
-                            Cmd.none
-            in
-            ( { model | token = newToken }
-            , maybeStoreToken
-            )
-
-        ChangedAmountInput newAmount ->
-            let
-                cleanedNewAmount =
-                    cleanAmountInput newAmount
-                        |> String.fromInt
-
-                beforeDecimal =
-                    String.dropRight 2 cleanedNewAmount
-                        |> String.padLeft 1 '0'
-
-                afterDecimal =
-                    String.right 2 cleanedNewAmount
-                        |> String.padLeft 2 '0'
-
-                formattedNewAmount =
-                    beforeDecimal ++ "," ++ afterDecimal
-            in
-            ( { model | amountInput = formattedNewAmount }, Cmd.none )
-
-        ChangedInflowInput newInflow ->
-            ( { model | inflowInput = newInflow }, Cmd.none )
-
-        ChangedPayeeInput newPayee ->
-            ( { model | payeeInput = newPayee }, Cmd.none )
-
-        ChangedCategoryInput newCategory ->
-            ( { model | selectedCategory = newCategory }, Cmd.none )
-
-        ChangedNotesInput newNotes ->
-            ( { model | notesInput = newNotes }, Cmd.none )
-
-        ChangedAssetInput newAssetId ->
-            ( { model | selectedAsset = newAssetId }, Cmd.none )
-
         TappedInsertTransaction ->
             let
                 token_ =
                     model.token
 
-                date_ =
-                    Date.fromIsoString model.dateInput
+                formResult =
+                    Form.validate model.inputForm
             in
-            case ( token_, date_ ) of
-                ( Just token, Ok date ) ->
+            case ( token_, formResult ) of
+                ( Just token, FormResult.Valid transaction ) ->
                     let
-                        maybeCategoryId =
-                            String.toInt model.selectedCategory
-
-                        maybeAssetId =
-                            String.toInt model.selectedAsset
-
-                        inflowFactor =
-                            if model.inflowInput then
-                                -1
-
-                            else
-                                1
-
-                        cents =
-                            cleanAmountInput model.amountInput * inflowFactor
-
-                        transaction =
-                            { date = date
-                            , amount =
-                                LunchMoney.amountFromCents cents
-                            , payee =
-                                if String.isEmpty model.payeeInput then
-                                    Nothing
-
-                                else
-                                    Just model.payeeInput
-                            , categoryId = maybeCategoryId
-                            , notes =
-                                if String.isEmpty model.notesInput then
-                                    Nothing
-
-                                else
-                                    Just model.notesInput
-                            , assetId = maybeAssetId
-                            , status = Just LunchMoney.Cleared
-                            }
-
                         ( newInsertQueue, insertCmds ) =
                             InsertQueue.insert token GotInsertQueueMsg [ transaction ] model.insertQueue
                     in
                     ( { model
                         | insertQueue = newInsertQueue
-                        , amountInput = ""
-                        , payeeInput = ""
-                        , selectedCategory = ""
-                        , selectedAsset = ""
+                        , inputForm = Form.form (inputFormFields { date = model.today }) inputFormValidate
                       }
                     , insertCmds
                     )
@@ -349,7 +332,63 @@ updateAppModel msg model =
             )
 
         InputFormChanged formMsg ->
-            ( { model | inputForm = Update.updateForm formMsg model.inputForm }, Cmd.none )
+            let
+                newInputForm =
+                    Update.updateForm formMsg model.inputForm
+
+                formattedNewAmount =
+                    Form.getStringField "amount" newInputForm
+                        |> Maybe.map
+                            (\newAmount ->
+                                let
+                                    cleanedNewAmount =
+                                        cleanAmountInput newAmount
+                                            |> String.fromInt
+
+                                    beforeDecimal =
+                                        String.dropRight 2 cleanedNewAmount
+                                            |> String.padLeft 1 '0'
+
+                                    afterDecimal =
+                                        String.right 2 cleanedNewAmount
+                                            |> String.padLeft 2 '0'
+                                in
+                                beforeDecimal ++ "," ++ afterDecimal
+                            )
+                        |> Maybe.withDefault ""
+
+                newInputForm2 =
+                    Form.setStringField "amount" formattedNewAmount newInputForm
+            in
+            ( { model | inputForm = newInputForm2 }, Cmd.none )
+
+        SettingsFormChanged formMsg ->
+            let
+                newSettingsForm =
+                    Update.updateForm formMsg model.settingsForm
+
+                settingsResult =
+                    Form.validate newSettingsForm
+
+                maybeToken =
+                    case settingsResult of
+                        FormResult.Valid settings ->
+                            settings.token
+
+                        _ ->
+                            Nothing
+
+                maybeStoreToken =
+                    case maybeToken of
+                        Just token ->
+                            storeToken token
+
+                        Nothing ->
+                            Cmd.none
+            in
+            ( { model | settingsForm = newSettingsForm }
+            , maybeStoreToken
+            )
 
 
 cleanAmountInput : String -> Int
@@ -449,37 +488,13 @@ appView model =
             model.autofill
                 |> Autofill.combined
 
-        formErrors =
-            case Form.validate model.inputForm of
-                FormResult.Valid _ ->
-                    []
+        inputFormErrors =
+            errorsFromValidation (Form.validate model.inputForm)
+                |> List.map Html.text
 
-                FormResult.Invalid errors ->
-                    displayAllFormErrors
-                        (\error ->
-                            case error of
-                                IsEmpty ->
-                                    "Should not be empty."
-
-                                InvalidDate err ->
-                                    "Should be a valid date. " ++ err
-                        )
-                        errors
-                        |> List.map Html.text
-
-                FormResult.Error errors ->
-                    "The form was misconfigured!"
-                        :: displayAllFormErrors
-                            (\error ->
-                                case error of
-                                    FormResult.MissingField ->
-                                        "Is missing."
-
-                                    FormResult.WrongType ->
-                                        "Is of the wrong type."
-                            )
-                            errors
-                        |> List.map Html.text
+        settingsFormErrors =
+            errorsFromValidation (Form.validate model.settingsForm)
+                |> List.map Html.text
 
         lunchMoneyErrorDisplay =
             case autofillError of
@@ -492,10 +507,10 @@ appView model =
         errorDisplay =
             case model.error of
                 Just err ->
-                    Html.text ("Error: " ++ err) :: lunchMoneyErrorDisplay ++ formErrors
+                    Html.text ("Error: " ++ err) :: lunchMoneyErrorDisplay ++ inputFormErrors ++ settingsFormErrors
 
                 Nothing ->
-                    [] ++ lunchMoneyErrorDisplay ++ formErrors
+                    [] ++ lunchMoneyErrorDisplay ++ inputFormErrors ++ settingsFormErrors
 
         payees =
             autofillData
@@ -534,35 +549,21 @@ appView model =
                 ]
                 [ labeled "Date"
                     []
-                    [ dateInput "date" InputFormChanged [ Attr.required True ] model.inputForm ]
+                    [ dateInput ( "date", model.inputForm ) InputFormChanged [ Attr.required True ] ]
                 , labeled "Amount"
                     []
-                    [ textInput model.amountInput
-                        ChangedAmountInput
+                    [ textInput ( "amount", model.inputForm )
+                        InputFormChanged
                         [ Attr.attribute "inputmode" "numeric"
                         ]
                     ]
                 , Html.div [ Attr.css [ Css.display Css.flex_, Css.flexDirection Css.row, Css.gap (Css.rem 1) ] ]
                     [ Html.label []
-                        [ Html.input
-                            [ Attr.type_ "radio"
-                            , Attr.name "inflow"
-                            , Attr.value "outflow"
-                            , Attr.checked (not model.inflowInput)
-                            , Events.onInput (\_ -> ChangedInflowInput False)
-                            ]
-                            []
+                        [ radioInput ( "amountDirection", model.inputForm ) "outflow" InputFormChanged []
                         , Html.text "Outflow"
                         ]
                     , Html.label []
-                        [ Html.input
-                            [ Attr.type_ "radio"
-                            , Attr.name "inflow"
-                            , Attr.value "inflow"
-                            , Attr.checked model.inflowInput
-                            , Events.onInput (\_ -> ChangedInflowInput True)
-                            ]
-                            []
+                        [ radioInput ( "amountDirection", model.inputForm ) "inflow" InputFormChanged []
                         , Html.text "Inflow"
                         ]
                     ]
@@ -570,15 +571,16 @@ appView model =
                     []
                     (autocompleteInput
                         "payeeList"
-                        model.payeeInput
-                        ChangedPayeeInput
+                        ( "payee", model.inputForm )
+                        InputFormChanged
                         []
                         payees
                     )
                 , labeled "Category"
                     []
                     [ selectInput
-                        ChangedCategoryInput
+                        ( "categoryId", model.inputForm )
+                        InputFormChanged
                         []
                         (groupedOptions
                             model.selectedCategory
@@ -601,7 +603,8 @@ appView model =
                 , labeled "Account"
                     []
                     [ selectInput
-                        ChangedAssetInput
+                        ( "assetId", model.inputForm )
+                        InputFormChanged
                         []
                         (flatOptions model.selectedAsset
                             (assets
@@ -616,8 +619,8 @@ appView model =
                     ]
                 , labeled "Notes"
                     []
-                    [ textInput model.notesInput
-                        ChangedNotesInput
+                    [ textInput ( "notes", model.inputForm )
+                        InputFormChanged
                         []
                     ]
                 , Html.button
@@ -631,9 +634,34 @@ appView model =
             )
         , Html.div [ Attr.css [ Css.width (Css.pct 100) ] ]
             [ autofillView model.today model.autofill
-            , settingsView model.token []
+            , settingsView model.settingsForm []
             ]
         ]
+
+
+errorsFromValidation : FormResult.FormResult String FormError result -> List String
+errorsFromValidation result =
+    case result of
+        FormResult.Valid _ ->
+            []
+
+        FormResult.Invalid errors ->
+            displayAllFormErrors
+                formErrorToString
+                errors
+
+        FormResult.Error errors ->
+            "The form was misconfigured!"
+                :: displayAllFormErrors
+                    (\error ->
+                        case error of
+                            FormResult.MissingField ->
+                                "Is missing."
+
+                            FormResult.WrongType ->
+                                "Is of the wrong type."
+                    )
+                    errors
 
 
 displayAllFormErrors : (error -> String) -> Dict String error -> List String
@@ -645,21 +673,20 @@ displayAllFormErrors toString errors =
             )
 
 
-inputField : { fieldName : String, type_ : String, formChanged : Update.Msg String -> Msg } -> List (Html.Attribute Msg) -> Form String FormError FormResult -> Html Msg
-inputField input attributes form =
-    let
-        currentValue =
-            Form.getStringField input.fieldName form
-                |> Maybe.withDefault ""
-    in
-    Html.input
-        ([ Attr.type_ input.type_
-         , Attr.value currentValue
-         , Events.onInput (Update.stringFieldMsg input.formChanged input.fieldName)
-         ]
-            ++ attributes
-        )
-        []
+formErrorToString : FormError -> String
+formErrorToString error =
+    case error of
+        IsEmpty ->
+            "Should not be empty."
+
+        NotInt ->
+            "Should be a whole number."
+
+        InvalidDate err ->
+            "Should be a valid date. " ++ err
+
+        InvalidToken ->
+            "Should be a valid access token."
 
 
 columnStyle : Float -> Css.Style
@@ -671,26 +698,42 @@ columnStyle gap =
         ]
 
 
-textInput : String -> (String -> msg) -> List (Html.Attribute msg) -> Html msg
-textInput value toMsg attributes =
+type alias FormInput error result =
+    ( String, Form String error result )
+
+
+textInput : FormInput error result -> (Update.Msg String -> Msg) -> List (Html.Attribute Msg) -> Html Msg
+textInput formInput toMsg attributes =
+    inputField "text" formInput toMsg attributes
+
+
+radioInput : FormInput error result -> String -> (Update.Msg String -> Msg) -> List (Html.Attribute Msg) -> Html Msg
+radioInput ( fieldName, form ) value toMsg attributes =
+    let
+        currentValue =
+            Form.getStringField fieldName form
+                |> Maybe.withDefault ""
+    in
     Html.input
-        ([ Attr.type_ "text"
+        ([ Attr.type_ "radio"
          , Attr.value value
-         , Events.onInput toMsg
+         , Attr.name fieldName
+         , Attr.checked (currentValue == value)
+         , Events.onInput (Update.stringFieldMsg toMsg fieldName)
          ]
             ++ attributes
         )
         []
 
 
-dateInput : String -> (Update.Msg String -> Msg) -> List (Html.Attribute Msg) -> InputForm -> Html Msg
-dateInput fieldName toMsg attributes =
-    inputField { fieldName = fieldName, type_ = "date", formChanged = toMsg } attributes
+dateInput : FormInput error result -> (Update.Msg String -> Msg) -> List (Html.Attribute Msg) -> Html Msg
+dateInput formInput toMsg attributes =
+    inputField "date" formInput toMsg attributes
 
 
-autocompleteInput : String -> String -> (String -> msg) -> List (Html.Attribute msg) -> List String -> List (Html msg)
-autocompleteInput listId current toMsg attributes options =
-    [ textInput current toMsg ([ Attr.list listId, Events.onInput toMsg ] ++ attributes)
+autocompleteInput : String -> FormInput error result -> (Update.Msg String -> Msg) -> List (Html.Attribute Msg) -> List String -> List (Html Msg)
+autocompleteInput listId formInput toMsg attributes options =
+    [ textInput formInput toMsg (Attr.list listId :: attributes)
     , Html.datalist [ Attr.id listId ]
         (options
             |> List.map
@@ -701,9 +744,9 @@ autocompleteInput listId current toMsg attributes options =
     ]
 
 
-selectInput : (String -> msg) -> List (Html.Attribute msg) -> List (Html msg) -> Html msg
-selectInput toMsg attributes options =
-    Html.select (Events.onInput toMsg :: attributes)
+selectInput : FormInput error result -> (Update.Msg String -> msg) -> List (Html.Attribute msg) -> List (Html msg) -> Html msg
+selectInput ( fieldName, _ ) toMsg attributes options =
+    Html.select (Events.onInput (Update.stringFieldMsg toMsg fieldName) :: attributes)
         options
 
 
@@ -733,6 +776,23 @@ groupedOptions selectedValue options =
                         (flatOptions selectedValue children)
                     ]
             )
+
+
+inputField : String -> FormInput error result -> (Update.Msg String -> Msg) -> List (Html.Attribute Msg) -> Html Msg
+inputField type_ ( fieldName, form ) toMsg attributes =
+    let
+        currentValue =
+            Form.getStringField fieldName form
+                |> Maybe.withDefault ""
+    in
+    Html.input
+        ([ Attr.type_ type_
+         , Attr.value currentValue
+         , Events.onInput (Update.stringFieldMsg toMsg fieldName)
+         ]
+            ++ attributes
+        )
+        []
 
 
 labeled : String -> List Css.Style -> List (Html msg) -> Html msg
@@ -842,8 +902,8 @@ autofillView today cache =
         ]
 
 
-settingsView : Maybe LunchMoney.Token -> List Css.Style -> Html Msg
-settingsView maybeToken styles =
+settingsView : SettingsForm -> List Css.Style -> Html Msg
+settingsView settingsForm styles =
     Html.details [ Attr.css styles ]
         [ Html.summary
             [ Attr.css
@@ -854,14 +914,8 @@ settingsView maybeToken styles =
         , labeled "Access token"
             []
             [ textInput
-                (case maybeToken of
-                    Just token ->
-                        LunchMoney.tokenToString token
-
-                    Nothing ->
-                        ""
-                )
-                ChangedToken
+                ( "token", settingsForm )
+                SettingsFormChanged
                 [ Attr.required True ]
             ]
         ]
