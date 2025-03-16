@@ -5,6 +5,12 @@ import Browser
 import Char exposing (isDigit)
 import Css
 import Date exposing (Date)
+import Dict exposing (Dict)
+import Forms.Field as Field exposing (Fields)
+import Forms.Form as Form exposing (Form)
+import Forms.Update as Update
+import Forms.Validation as Val
+import Forms.Validation.Result as FormResult
 import Html.Styled as Html exposing (Html)
 import Html.Styled.Attributes as Attr
 import Html.Styled.Events as Events
@@ -44,9 +50,47 @@ type alias AppModel =
     , amountInput : String
     , notesInput : String
     , inflowInput : Bool
+    , inputForm : InputForm
     , insertQueue : InsertQueue
     , error : Maybe String
     }
+
+
+type alias InputForm =
+    Form String FormError FormResult
+
+
+inputFormFields : { date : Date } -> Fields String
+inputFormFields defaults =
+    Field.fields
+        [ ( "date", Field.inputWithDefault (Date.toIsoString defaults.date) )
+        ]
+
+
+type alias FormResult =
+    { date : Date }
+
+
+type FormError
+    = IsEmpty
+    | InvalidDate String
+
+
+inputFormValidate : Val.Validate String FormError FormResult
+inputFormValidate fields =
+    Val.valid FormResult
+        |> Val.required fields
+            "date"
+            (Val.stringField <|
+                Val.notEmpty IsEmpty <|
+                    \raw ->
+                        case Date.fromIsoString raw of
+                            Ok date ->
+                                Val.success date
+
+                            Err err ->
+                                Val.failure (InvalidDate err)
+            )
 
 
 init : Decode.Value -> ( Model, Cmd Msg )
@@ -69,6 +113,9 @@ init flagsRaw =
 
                         _ ->
                             ( Just "No token given at startup or invalid date, not getting updates.", Cmd.none )
+
+                inputFields =
+                    inputFormFields { date = flags.today }
             in
             ( Ok
                 { token = flags.maybeToken
@@ -81,6 +128,7 @@ init flagsRaw =
                 , notesInput = ""
                 , selectedCategory = ""
                 , selectedAsset = ""
+                , inputForm = Form.form inputFields inputFormValidate
                 , insertQueue =
                     flags.maybeInsertQueue
                         |> Maybe.withDefault InsertQueue.empty
@@ -93,7 +141,6 @@ init flagsRaw =
 type Msg
     = GotAutofillMsg Autofill.Msg
     | ChangedToken String
-    | ChangedDateInput String
     | ChangedAmountInput String
     | ChangedInflowInput Bool
     | ChangedPayeeInput String
@@ -104,6 +151,7 @@ type Msg
     | TappedProcessQueue
     | TappedSyncAutofill
     | GotInsertQueueMsg InsertQueue.Msg
+    | InputFormChanged (Update.Msg String)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -164,9 +212,6 @@ updateAppModel msg model =
             ( { model | token = newToken }
             , maybeStoreToken
             )
-
-        ChangedDateInput newDate ->
-            ( { model | dateInput = newDate }, Cmd.none )
 
         ChangedAmountInput newAmount ->
             let
@@ -303,6 +348,9 @@ updateAppModel msg model =
             , storeInsertQueue newInsertQueue
             )
 
+        InputFormChanged formMsg ->
+            ( { model | inputForm = Update.updateForm formMsg model.inputForm }, Cmd.none )
+
 
 cleanAmountInput : String -> Int
 cleanAmountInput amountInput =
@@ -401,6 +449,38 @@ appView model =
             model.autofill
                 |> Autofill.combined
 
+        formErrors =
+            case Form.validate model.inputForm of
+                FormResult.Valid _ ->
+                    []
+
+                FormResult.Invalid errors ->
+                    displayAllFormErrors
+                        (\error ->
+                            case error of
+                                IsEmpty ->
+                                    "Should not be empty."
+
+                                InvalidDate err ->
+                                    "Should be a valid date. " ++ err
+                        )
+                        errors
+                        |> List.map Html.text
+
+                FormResult.Error errors ->
+                    "The form was misconfigured!"
+                        :: displayAllFormErrors
+                            (\error ->
+                                case error of
+                                    FormResult.MissingField ->
+                                        "Is missing."
+
+                                    FormResult.WrongType ->
+                                        "Is of the wrong type."
+                            )
+                            errors
+                        |> List.map Html.text
+
         lunchMoneyErrorDisplay =
             case autofillError of
                 Just error ->
@@ -412,10 +492,10 @@ appView model =
         errorDisplay =
             case model.error of
                 Just err ->
-                    Html.text ("Error: " ++ err) :: lunchMoneyErrorDisplay
+                    Html.text ("Error: " ++ err) :: lunchMoneyErrorDisplay ++ formErrors
 
                 Nothing ->
-                    [] ++ lunchMoneyErrorDisplay
+                    [] ++ lunchMoneyErrorDisplay ++ formErrors
 
         payees =
             autofillData
@@ -454,7 +534,7 @@ appView model =
                 ]
                 [ labeled "Date"
                     []
-                    [ dateInput model.dateInput ChangedDateInput [ Attr.required True ] ]
+                    [ dateInput "date" InputFormChanged [ Attr.required True ] model.inputForm ]
                 , labeled "Amount"
                     []
                     [ textInput model.amountInput
@@ -556,6 +636,32 @@ appView model =
         ]
 
 
+displayAllFormErrors : (error -> String) -> Dict String error -> List String
+displayAllFormErrors toString errors =
+    Dict.toList errors
+        |> List.map
+            (\( key, error ) ->
+                key ++ ": " ++ toString error
+            )
+
+
+inputField : { fieldName : String, type_ : String, formChanged : Update.Msg String -> Msg } -> List (Html.Attribute Msg) -> Form String FormError FormResult -> Html Msg
+inputField input attributes form =
+    let
+        currentValue =
+            Form.getStringField input.fieldName form
+                |> Maybe.withDefault ""
+    in
+    Html.input
+        ([ Attr.type_ input.type_
+         , Attr.value currentValue
+         , Events.onInput (Update.stringFieldMsg input.formChanged input.fieldName)
+         ]
+            ++ attributes
+        )
+        []
+
+
 columnStyle : Float -> Css.Style
 columnStyle gap =
     Css.batch
@@ -577,16 +683,9 @@ textInput value toMsg attributes =
         []
 
 
-dateInput : String -> (String -> msg) -> List (Html.Attribute msg) -> Html msg
-dateInput value toMsg attributes =
-    Html.input
-        ([ Attr.type_ "date"
-         , Attr.value value
-         , Events.onInput toMsg
-         ]
-            ++ attributes
-        )
-        []
+dateInput : String -> (Update.Msg String -> Msg) -> List (Html.Attribute Msg) -> InputForm -> Html Msg
+dateInput fieldName toMsg attributes =
+    inputField { fieldName = fieldName, type_ = "date", formChanged = toMsg } attributes
 
 
 autocompleteInput : String -> String -> (String -> msg) -> List (Html.Attribute msg) -> List String -> List (Html msg)
